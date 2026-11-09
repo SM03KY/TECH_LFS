@@ -8,24 +8,12 @@
             Equity: ["Unrestricted Fund Balance", "Restricted Grant Fund Balance"]
         };
 
-        const defaultFunds = ["General Operations", "Research Grant 2026", "Annual Gala Event", "Community Outreach"];
-
-        const sampleOrgTransactions = [
-            { id: "tx-101", date: "2026-11-01", category: "Equity", subCategory: "Unrestricted Fund Balance", fund: "General Operations", description: "Initial Organization Fund Opening Balance", amount: 25000.00, method: "Cash / Bank Transfer" },
-            { id: "tx-102", date: "2026-11-02", category: "Revenue", subCategory: "Grants & Sponsorships", fund: "Research Grant 2026", description: "Global Innovation Grant First Tranche", amount: 15000.00, method: "Grant Account" },
-            { id: "tx-103", date: "2026-11-04", category: "Revenue", subCategory: "Membership Dues", fund: "General Operations", description: "Q4 Organizational Annual Member Dues", amount: 6200.00, method: "Cash / Bank Transfer" },
-            { id: "tx-104", date: "2026-11-05", category: "Expense", subCategory: "Research & Lab Supplies", fund: "Research Grant 2026", description: "Advanced Computing Hardware & Sensors", amount: 3400.00, method: "Grant Account" },
-            { id: "tx-105", date: "2026-11-06", category: "Expense", subCategory: "Event Expenses", fund: "Annual Gala Event", description: "Gala Banquet Hall Deposit & Catering", amount: 1850.00, method: "Cash / Bank Transfer" },
-            { id: "tx-106", date: "2026-11-07", category: "Expense", subCategory: "Office & Admin Expense", fund: "General Operations", description: "HQ Internet & Stationeries", amount: 215.80, method: "Cash / Bank Transfer" }
-        ];
-
         const ocrPresets = {
             gala: {
                 vendor: "Grand Palace Catering",
                 date: "2026-11-06",
                 amount: 1850.00,
                 subCategory: "Event Expenses",
-                fund: "Annual Gala Event",
                 rawText: "GRAND PALACE CATERING\nDate: 2026-11-06\nBanquet Catering (100 pax) - ₱1,500.00\nAudio/Visual Rental - ₱350.00\nTotal Amount: ₱1,850.00\nPaid in Full",
                 imgSrc: "https://placehold.co/500x700/0f172a/3b82f6?text=ANNUAL+GALA+CATERING%0A%0AGrand+Palace%0ADate:+2026-11-06%0ATotal:+₱1,850.00"
             },
@@ -34,7 +22,6 @@
                 date: "2026-11-05",
                 amount: 3400.00,
                 subCategory: "Research & Lab Supplies",
-                fund: "Research Grant 2026",
                 rawText: "TECHLAB SCIENTIFIC INVOICE\nDate: 2026-11-05\nInvoice #TL-8841\nHigh-Performance Compute Node - ₱3,400.00\nGrant Code: RES-2026\nPayment Status: Completed",
                 imgSrc: "https://placehold.co/500x700/1e1b4b/6366f1?text=GRANT+RESEARCH+INVOICE%0A%0ATechLab+Scientific%0ADate:+2026-11-05%0ATotal:+₱3,400.00"
             },
@@ -43,7 +30,6 @@
                 date: "2026-11-07",
                 amount: 215.80,
                 subCategory: "Office & Admin Expense",
-                fund: "General Operations",
                 rawText: "METRO UTILITIES & OFFICE\nDate: 2026-11-07\nFiber Internet Billing - ₱140.00\nPaper & Office Supplies - ₱75.80\nTOTAL: ₱215.80\nPaid via Transfer",
                 imgSrc: "https://placehold.co/500x700/14532d/22c55e?text=HQ+OFFICE+RECEIPT%0A%0AMetro+Utilities%0ADate:+2026-11-07%0ATotal:+₱215.80"
             }
@@ -53,55 +39,176 @@
         let orgState = {
             name: "Global Tech Foundation",
             fiscalYear: "January 1",
-            currency: "PHP",
-            funds: [...defaultFunds]
+            currency: "PHP"
         };
 
         let ledgerTransactions = [];
-        let fundChartInstance = null;
+        let currentUser = null;
+        let csrfToken = "";
+        let incomeExpenseChartInstance = null;
         let categoryChartInstance = null;
         let activeOcrPreset = null;
 
         const currencySymbols = { PHP: "₱" };
 
-        window.onload = function() {
-            // Load Org Config
-            const savedOrg = localStorage.getItem('techledger_org_config');
-            if (savedOrg) {
-                try { orgState = JSON.parse(savedOrg); } catch(e){}
-            }
-            if (!currencySymbols[orgState.currency]) {
-                orgState.currency = 'PHP';
-            }
-
-            // Load Transactions
-            const savedTx = localStorage.getItem('techledger_org_txs');
-            if (savedTx) {
-                try { ledgerTransactions = JSON.parse(savedTx); } catch(e){}
-            } else {
-                ledgerTransactions = [...sampleOrgTransactions];
-            }
-
+        window.onload = async function() {
+            initializeTheme();
             document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
             const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
             document.querySelectorAll('.currentDateSpan').forEach(el => el.textContent = todayStr);
-
-            applyOrgConfig();
             populateSubCategories();
-            populateFundDropdowns();
-            renderAll();
+            try {
+                const result = await apiRequest('bootstrap');
+                if (result.authenticated) initializeApplication(result);
+                else showAuthForm(result.setupRequired ? 'setup' : 'login');
+            } catch (error) {
+                showAuthForm('login', error.message);
+            }
         };
 
-        function saveAllState() {
-            localStorage.setItem('techledger_org_config', JSON.stringify(orgState));
-            localStorage.setItem('techledger_org_txs', JSON.stringify(ledgerTransactions));
+        async function apiRequest(action, options = {}) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (csrfToken && options.method && options.method !== 'GET') {
+                headers['X-CSRF-Token'] = csrfToken;
+            }
+            const response = await fetch(`api.php?action=${encodeURIComponent(action)}`, {
+                method: options.method || 'GET',
+                headers,
+                credentials: 'same-origin',
+                body: options.body ? JSON.stringify(options.body) : undefined
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'The request could not be completed.');
+            return result;
+        }
+
+        function showAuthForm(mode, message = '') {
+            document.getElementById('authGate').classList.remove('hidden');
+            document.getElementById('application').classList.add('hidden');
+            document.getElementById('setupForm').classList.toggle('hidden', mode !== 'setup');
+            document.getElementById('loginForm').classList.toggle('hidden', mode !== 'login');
+            const messageElement = document.getElementById('authMessage');
+            messageElement.textContent = message;
+            messageElement.classList.toggle('hidden', !message);
+        }
+
+        function initializeApplication(data) {
+            currentUser = data.user;
+            csrfToken = data.csrfToken;
+            orgState = data.org;
+            ledgerTransactions = data.transactions;
+            document.getElementById('authGate').classList.add('hidden');
+            document.getElementById('application').classList.remove('hidden');
+            document.getElementById('sessionUser').textContent = `${currentUser.name} · ${currentUser.role}`;
+            applyRolePermissions();
+            applyOrgConfig();
             renderAll();
+            renderDashboardCharts();
+            switchTab('dashTab');
+        }
+
+        async function login(event) {
+            event.preventDefault();
+            try {
+                const result = await apiRequest('login', {
+                    method: 'POST',
+                    body: {
+                        username: document.getElementById('loginUsername').value,
+                        password: document.getElementById('loginPassword').value
+                    }
+                });
+                document.getElementById('loginForm').reset();
+                initializeApplication(result);
+            } catch (error) {
+                showAuthForm('login', error.message);
+            }
+        }
+
+        async function setupAdmin(event) {
+            event.preventDefault();
+            try {
+                const result = await apiRequest('setup', {
+                    method: 'POST',
+                    body: {
+                        name: document.getElementById('setupName').value,
+                        username: document.getElementById('setupUsername').value,
+                        password: document.getElementById('setupPassword').value
+                    }
+                });
+                document.getElementById('setupForm').reset();
+                initializeApplication(result);
+            } catch (error) {
+                showAuthForm('setup', error.message);
+            }
+        }
+
+        async function logout() {
+            try {
+                await apiRequest('logout', { method: 'POST', body: {} });
+                currentUser = null;
+                csrfToken = '';
+                ledgerTransactions = [];
+                showAuthForm('login');
+            } catch (error) {
+                notifyUser(error.message);
+            }
+        }
+
+        function applyRolePermissions() {
+            document.querySelectorAll('[data-role]').forEach(element => {
+                const allowedRoles = element.dataset.role.split(' ');
+                element.classList.toggle('hidden', !allowedRoles.includes(currentUser.role));
+            });
+        }
+
+        function notifyUser(message) {
+            let notice = document.getElementById('appNotice');
+            if (!notice) {
+                notice = document.createElement('div');
+                notice.id = 'appNotice';
+                notice.setAttribute('role', 'status');
+                notice.className = 'fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg border border-rose-500/30 bg-slate-900 px-4 py-3 text-sm text-rose-300 shadow-lg';
+                document.body.appendChild(notice);
+            }
+            notice.textContent = message;
+            notice.classList.remove('hidden');
+            window.setTimeout(() => notice.classList.add('hidden'), 5000);
+        }
+
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('techpass_theme');
+            applyTheme(savedTheme === 'light' ? 'light' : 'dark');
+        }
+
+        function toggleTheme() {
+            const nextTheme = document.body.dataset.theme === 'light' ? 'dark' : 'light';
+            localStorage.setItem('techpass_theme', nextTheme);
+            applyTheme(nextTheme);
+        }
+
+        function applyTheme(theme) {
+            const isLight = theme === 'light';
+            document.body.dataset.theme = isLight ? 'light' : 'dark';
+
+            const toggle = document.getElementById('themeToggle');
+            toggle.setAttribute('aria-pressed', String(isLight));
+            toggle.setAttribute('aria-label', `Switch to ${isLight ? 'dark' : 'light'} mode`);
+            toggle.title = `Switch to ${isLight ? 'dark' : 'light'} mode`;
+            document.getElementById('themeToggleLabel').textContent = isLight ? 'Dark' : 'Light';
+            document.getElementById('themeToggleIcon').className = `fa-solid ${isLight ? 'fa-moon' : 'fa-sun'}`;
+
+            if (window.Chart && !document.getElementById('dashTab').classList.contains('hidden')) {
+                renderDashboardCharts();
+            }
         }
 
         function renderAll() {
             renderLedgerTable();
             calculateAndRenderFS();
             renderDashboard();
+            if (window.Chart && !document.getElementById('dashTab').classList.contains('hidden')) {
+                renderDashboardCharts();
+            }
         }
 
         function applyOrgConfig() {
@@ -110,68 +217,61 @@
 
             document.getElementById('settingOrgName').value = orgState.name;
             document.getElementById('settingFiscalYear').value = orgState.fiscalYear;
-
-            renderFundsList();
         }
 
-        function saveOrgSettings() {
-            orgState.name = document.getElementById('settingOrgName').value || "Organization Ledger";
-            orgState.fiscalYear = document.getElementById('settingFiscalYear').value || "January 1";
-            orgState.currency = 'PHP';
-            applyOrgConfig();
-            saveAllState();
-        }
-
-        function renderFundsList() {
-            const container = document.getElementById('fundsListContainer');
-            container.innerHTML = '';
-            orgState.funds.forEach((fund, idx) => {
-                const item = document.createElement('div');
-                item.className = "flex items-center justify-between bg-slate-900 px-3 py-1.5 rounded border border-slate-800 text-xs";
-                item.innerHTML = `
-                    <span class="font-medium text-slate-200">${fund}</span>
-                    <button onclick="deleteFund(${idx})" class="text-slate-500 hover:text-rose-400"><i class="fa-solid fa-xmark"></i></button>
-                `;
-                container.appendChild(item);
-            });
-            populateFundDropdowns();
-        }
-
-        function addFund() {
-            const val = document.getElementById('newFundInput').value.trim();
-            if(val && !orgState.funds.includes(val)) {
-                orgState.funds.push(val);
-                document.getElementById('newFundInput').value = '';
-                renderFundsList();
-                saveAllState();
+        async function saveOrgSettings() {
+            try {
+                const result = await apiRequest('settings', {
+                    method: 'POST',
+                    body: {
+                        name: document.getElementById('settingOrgName').value,
+                        fiscalYear: document.getElementById('settingFiscalYear').value
+                    }
+                });
+                orgState = result.org;
+                applyOrgConfig();
+                notifyUser('Organization settings saved.');
+            } catch (error) {
+                notifyUser(error.message);
             }
         }
 
-        function deleteFund(idx) {
-            if(orgState.funds.length > 1) {
-                orgState.funds.splice(idx, 1);
-                renderFundsList();
-                saveAllState();
-            }
+        async function loadUsers() {
+            const result = await apiRequest('users');
+            const list = document.getElementById('usersList');
+            list.replaceChildren();
+            result.users.forEach(user => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between gap-3 bg-slate-900 px-3 py-2 rounded border border-slate-800 text-xs';
+                const name = document.createElement('span');
+                name.className = 'font-medium text-slate-200';
+                name.textContent = `${user.name} (${user.username})`;
+                const role = document.createElement('span');
+                role.className = 'text-slate-400 capitalize';
+                role.textContent = user.role;
+                row.append(name, role);
+                list.appendChild(row);
+            });
         }
 
-        function populateFundDropdowns() {
-            const entryFundSelect = document.getElementById('entryFund');
-            const filterFundSelect = document.getElementById('filterFund');
-            const ocrFundSelect = document.getElementById('ocrFund');
-
-            const currentFilter = filterFundSelect.value;
-            entryFundSelect.innerHTML = '';
-            filterFundSelect.innerHTML = '<option value="ALL">All Funds & Projects</option>';
-            ocrFundSelect.innerHTML = '';
-
-            orgState.funds.forEach(fund => {
-                entryFundSelect.innerHTML += `<option value="${fund}">${fund}</option>`;
-                filterFundSelect.innerHTML += `<option value="${fund}">${fund}</option>`;
-                ocrFundSelect.innerHTML += `<option value="${fund}">${fund}</option>`;
-            });
-
-            if(currentFilter) filterFundSelect.value = currentFilter;
+        async function createUser(event) {
+            event.preventDefault();
+            try {
+                await apiRequest('users', {
+                    method: 'POST',
+                    body: {
+                        name: document.getElementById('userName').value,
+                        username: document.getElementById('userUsername').value,
+                        password: document.getElementById('userPassword').value,
+                        role: document.getElementById('userRole').value
+                    }
+                });
+                document.getElementById('userForm').reset();
+                await loadUsers();
+                notifyUser('User account created.');
+            } catch (error) {
+                notifyUser(error.message);
+            }
         }
 
         function populateSubCategories() {
@@ -185,6 +285,8 @@
         }
 
         function switchTab(tabId) {
+            const tabButton = document.getElementById(`btn-${tabId}`);
+            if (!document.getElementById(tabId) || (tabButton && tabButton.classList.contains('hidden'))) return;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             document.getElementById(tabId).classList.remove('hidden');
 
@@ -201,6 +303,9 @@
 
             if(tabId === 'dashTab') {
                 setTimeout(renderDashboardCharts, 100);
+            }
+            if (tabId === 'settingsTab' && currentUser.role === 'admin') {
+                loadUsers().catch(error => notifyUser(error.message));
             }
         }
 
@@ -220,32 +325,36 @@
             }
         }
 
-        function handleJournalSubmit(e) {
+        async function handleJournalSubmit(e) {
             e.preventDefault();
             const editId = document.getElementById('editEntryId').value;
             const entry = {
-                id: editId || 'tx-' + Date.now(),
+                id: editId || undefined,
                 date: document.getElementById('entryDate').value,
                 category: document.getElementById('entryCategory').value,
                 subCategory: document.getElementById('entrySubCategory').value,
-                fund: document.getElementById('entryFund').value,
                 description: document.getElementById('entryDescription').value,
                 amount: parseFloat(document.getElementById('entryAmount').value) || 0,
                 method: document.getElementById('entryMethod').value
             };
 
-            if (editId) {
-                const idx = ledgerTransactions.findIndex(t => t.id === editId);
-                if(idx !== -1) ledgerTransactions[idx] = entry;
-            } else {
-                ledgerTransactions.unshift(entry);
+            try {
+                const result = await apiRequest('transaction', {
+                    method: 'POST',
+                    body: { transaction: entry }
+                });
+                const index = ledgerTransactions.findIndex(transaction => transaction.id === result.transaction.id);
+                if (index >= 0) ledgerTransactions[index] = result.transaction;
+                else ledgerTransactions.unshift(result.transaction);
+                cancelEditEntry();
+                renderAll();
+            } catch (error) {
+                notifyUser(error.message);
             }
-
-            cancelEditEntry();
-            saveAllState();
         }
 
         function editEntry(id) {
+            if (!['admin', 'treasurer'].includes(currentUser.role)) return;
             const tx = ledgerTransactions.find(t => t.id === id);
             if(!tx) return;
 
@@ -254,7 +363,6 @@
             document.getElementById('entryCategory').value = tx.category;
             populateSubCategories();
             document.getElementById('entrySubCategory').value = tx.subCategory;
-            document.getElementById('entryFund').value = tx.fund;
             document.getElementById('entryDescription').value = tx.description;
             document.getElementById('entryAmount').value = tx.amount;
             document.getElementById('entryMethod').value = tx.method;
@@ -273,37 +381,44 @@
             document.getElementById('cancelEditBtn').classList.add('hidden');
         }
 
-        function deleteEntry(id) {
-            ledgerTransactions = ledgerTransactions.filter(t => t.id !== id);
-            saveAllState();
-        }
-
-        function resetDemoData() {
-            ledgerTransactions = [...sampleOrgTransactions];
-            orgState.funds = [...defaultFunds];
-            saveAllState();
+        async function deleteEntry(id) {
+            if (!['admin', 'treasurer'].includes(currentUser.role) || !window.confirm('Delete this ledger entry?')) return;
+            try {
+                await apiRequest('delete_transaction', {
+                    method: 'POST',
+                    body: { id }
+                });
+                ledgerTransactions = ledgerTransactions.filter(transaction => transaction.id !== id);
+                renderAll();
+            } catch (error) {
+                notifyUser(error.message);
+            }
         }
 
         // RENDER LEDGER TABLE
         function renderLedgerTable() {
             const tbody = document.getElementById('ledgerTableBody');
             const search = document.getElementById('ledgerSearch').value.toLowerCase();
-            const fundFilter = document.getElementById('filterFund').value;
-
             tbody.innerHTML = '';
 
             const filtered = ledgerTransactions.filter(t => {
-                const matchSearch = t.description.toLowerCase().includes(search) || t.subCategory.toLowerCase().includes(search);
-                const matchFund = (fundFilter === 'ALL') || (t.fund === fundFilter);
-                return matchSearch && matchFund;
+                return t.description.toLowerCase().includes(search) ||
+                    t.subCategory.toLowerCase().includes(search) ||
+                    t.category.toLowerCase().includes(search);
             });
 
             if(filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-500 text-xs">No organizational entries found matching your criteria.</td></tr>`;
+                const emptyRow = document.createElement('tr');
+                const emptyCell = document.createElement('td');
+                emptyCell.colSpan = currentUser.role === 'auditor' ? 5 : 6;
+                emptyCell.className = 'text-center py-8 text-slate-500 text-xs';
+                emptyCell.textContent = 'No organizational entries found matching your criteria.';
+                emptyRow.appendChild(emptyCell);
+                tbody.appendChild(emptyRow);
                 return;
             }
 
-            const sym = currencySymbols[orgState.currency] || '$';
+            const sym = currencySymbols[orgState.currency];
 
             filtered.forEach(tx => {
                 const tr = document.createElement('tr');
@@ -314,29 +429,48 @@
                 if(tx.category === 'Expense') catBadge = 'bg-rose-500/20 text-rose-400 border border-rose-500/30';
                 if(tx.category === 'Asset') catBadge = 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
 
-                tr.innerHTML = `
-                    <td class="py-3 px-4 font-mono text-xs text-slate-400">${tx.date}</td>
-                    <td class="py-3 px-4"><span class="px-2 py-0.5 rounded text-[11px] font-semibold ${catBadge}">${tx.category}</span></td>
-                    <td class="py-3 px-4 font-medium text-slate-200">${tx.subCategory}</td>
-                    <td class="py-3 px-4 text-xs text-slate-400"><span class="bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-slate-300">${tx.fund}</span></td>
-                    <td class="py-3 px-4 text-slate-300 max-w-xs truncate">${tx.description}</td>
-                    <td class="py-3 px-4 text-right font-mono font-bold ${tx.category === 'Revenue' ? 'text-emerald-400' : 'text-slate-200'}">
-                        ${tx.category === 'Revenue' ? '+' : ''}${sym}${tx.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
-                    </td>
-                    <td class="py-3 px-4 text-center">
-                        <div class="flex items-center justify-center space-x-2">
-                            <button onclick="editEntry('${tx.id}')" class="text-slate-400 hover:text-blue-400 text-xs"><i class="fa-solid fa-pen"></i></button>
-                            <button onclick="deleteEntry('${tx.id}')" class="text-slate-400 hover:text-rose-400 text-xs"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    </td>
-                `;
+                const addCell = (text, className) => {
+                    const cell = document.createElement('td');
+                    cell.className = className;
+                    cell.textContent = text;
+                    tr.appendChild(cell);
+                    return cell;
+                };
+                addCell(tx.date, 'py-3 px-4 font-mono text-xs text-slate-400');
+                const categoryCell = document.createElement('td');
+                categoryCell.className = 'py-3 px-4';
+                const categoryBadge = document.createElement('span');
+                categoryBadge.className = `px-2 py-0.5 rounded text-[11px] font-semibold ${catBadge}`;
+                categoryBadge.textContent = tx.category;
+                categoryCell.appendChild(categoryBadge);
+                tr.appendChild(categoryCell);
+                addCell(tx.subCategory, 'py-3 px-4 font-medium text-slate-200');
+                addCell(tx.description, 'py-3 px-4 text-slate-300 max-w-xs truncate');
+                addCell(`${tx.category === 'Revenue' ? '+' : ''}${sym}${Number(tx.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+                    `py-3 px-4 text-right font-mono font-bold ${tx.category === 'Revenue' ? 'text-emerald-400' : 'text-slate-200'}`);
+                if (currentUser.role !== 'auditor') {
+                    const actionsCell = document.createElement('td');
+                    actionsCell.className = 'py-3 px-4 text-center';
+                    const editButton = document.createElement('button');
+                    editButton.className = 'text-slate-400 hover:text-blue-400 text-xs mr-2';
+                    editButton.setAttribute('aria-label', 'Edit entry');
+                    editButton.innerHTML = '<i class="fa-solid fa-pen"></i>';
+                    editButton.addEventListener('click', () => editEntry(tx.id));
+                    const deleteButton = document.createElement('button');
+                    deleteButton.className = 'text-slate-400 hover:text-rose-400 text-xs';
+                    deleteButton.setAttribute('aria-label', 'Delete entry');
+                    deleteButton.innerHTML = '<i class="fa-solid fa-trash"></i>';
+                    deleteButton.addEventListener('click', () => deleteEntry(tx.id));
+                    actionsCell.append(editButton, deleteButton);
+                    tr.appendChild(actionsCell);
+                }
                 tbody.appendChild(tr);
             });
         }
 
         // FINANCIAL STATEMENTS CALCULATOR
         function calculateAndRenderFS() {
-            const sym = currencySymbols[orgState.currency] || '$';
+            const sym = currencySymbols[orgState.currency];
             const subCategorySums = {};
             let totalRevenue = 0, totalExpense = 0;
             let totalAssets = 0, totalLiabilities = 0, totalEquity = 0;
@@ -433,14 +567,11 @@
             document.getElementById('cfNetCashChange').textContent = `${sym}${netSurplus.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('cfEndingCash').textContent = `${sym}${liquidCash.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
 
-            // Header Sync
-            document.getElementById('headerTotalRevenue').textContent = `${sym}${totalRevenue.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('headerNetSurplus').textContent = `${sym}${netSurplus.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
         }
 
         // RENDER DASHBOARD KPI & CHARTS
         function renderDashboard() {
-            const sym = currencySymbols[orgState.currency] || '$';
+            const sym = currencySymbols[orgState.currency];
             let rev = 0, exp = 0;
             ledgerTransactions.forEach(t => {
                 if(t.category === 'Revenue') rev += t.amount;
@@ -457,34 +588,37 @@
         }
 
         function renderDashboardCharts() {
-            const fundData = {};
-            orgState.funds.forEach(f => fundData[f] = { rev: 0, exp: 0 });
-
-            ledgerTransactions.forEach(t => {
-                if(!fundData[t.fund]) fundData[t.fund] = { rev: 0, exp: 0 };
-                if(t.category === 'Revenue') fundData[t.fund].rev += t.amount;
-                if(t.category === 'Expense') fundData[t.fund].exp += t.amount;
+            const isLight = document.body.dataset.theme === 'light';
+            const isMobile = window.matchMedia('(max-width: 639px)').matches;
+            const chartTextColor = isLight ? '#475569' : '#94a3b8';
+            const chartGridColor = isLight ? '#e2e8f0' : '#334155';
+            const incomeExpenseByCategory = {};
+            ledgerTransactions.forEach(transaction => {
+                if (!['Revenue', 'Expense'].includes(transaction.category)) return;
+                const category = transaction.subCategory;
+                if (!incomeExpenseByCategory[category]) incomeExpenseByCategory[category] = { revenue: 0, expense: 0 };
+                incomeExpenseByCategory[category][transaction.category === 'Revenue' ? 'revenue' : 'expense'] += Number(transaction.amount);
             });
 
-            const fundCtx = document.getElementById('fundAllocationChart').getContext('2d');
-            if(fundChartInstance) fundChartInstance.destroy();
+            const incomeExpenseCtx = document.getElementById('incomeExpenseChart').getContext('2d');
+            if(incomeExpenseChartInstance) incomeExpenseChartInstance.destroy();
 
-            fundChartInstance = new Chart(fundCtx, {
+            incomeExpenseChartInstance = new Chart(incomeExpenseCtx, {
                 type: 'bar',
                 data: {
-                    labels: Object.keys(fundData),
+                    labels: Object.keys(incomeExpenseByCategory),
                     datasets: [
-                        { label: 'Revenues', data: Object.values(fundData).map(d => d.rev), backgroundColor: '#10b981' },
-                        { label: 'Expenses', data: Object.values(fundData).map(d => d.exp), backgroundColor: '#f43f5e' }
+                        { label: 'Revenues', data: Object.values(incomeExpenseByCategory).map(values => values.revenue), backgroundColor: '#10b981' },
+                        { label: 'Expenses', data: Object.values(incomeExpenseByCategory).map(values => values.expense), backgroundColor: '#f43f5e' }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { labels: { color: '#94a3b8' } } },
+                    plugins: { legend: { labels: { color: chartTextColor } } },
                     scales: {
-                        x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-                        y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
+                        x: { ticks: { color: chartTextColor }, grid: { color: chartGridColor } },
+                        y: { ticks: { color: chartTextColor }, grid: { color: chartGridColor } }
                     }
                 }
             });
@@ -509,7 +643,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { position: 'right', labels: { color: '#94a3b8' } } }
+                    plugins: { legend: { position: isMobile ? 'bottom' : 'right', labels: { color: chartTextColor } } }
                 }
             });
         }
@@ -556,8 +690,7 @@
                     date: new Date().toISOString().split('T')[0],
                     amount: 320.00,
                     subCategory: "Office & Admin Expense",
-                    fund: orgState.funds[0] || "General Operations",
-                    rawText: `CUSTOM OCR SCAN\nDate: ${new Date().toISOString().split('T')[0]}\n1x Vendor Supplies - $320.00\nTotal: $320.00`,
+                    rawText: `CUSTOM OCR SCAN\nDate: ${new Date().toISOString().split('T')[0]}\n1x Vendor Supplies - ₱320.00\nTotal: ₱320.00`,
                     imgSrc: evt.target.result
                 };
 
@@ -606,7 +739,6 @@
                 document.getElementById('ocrDate').value = activeOcrPreset.date;
                 document.getElementById('ocrAmount').value = activeOcrPreset.amount;
                 document.getElementById('ocrSubCat').value = activeOcrPreset.subCategory;
-                document.getElementById('ocrFund').value = activeOcrPreset.fund;
                 document.getElementById('ocrRawText').value = activeOcrPreset.rawText;
 
                 document.getElementById('ocrPostBtn').disabled = false;
@@ -620,15 +752,12 @@
             const date = document.getElementById('ocrDate').value || activeOcrPreset.date;
             const amount = parseFloat(document.getElementById('ocrAmount').value) || activeOcrPreset.amount;
             const subCategory = document.getElementById('ocrSubCat').value;
-            const fund = document.getElementById('ocrFund').value;
-
             switchTab('ledgerTab');
 
             document.getElementById('entryDate').value = date;
             document.getElementById('entryCategory').value = 'Expense';
             populateSubCategories();
             document.getElementById('entrySubCategory').value = subCategory;
-            document.getElementById('entryFund').value = fund;
             document.getElementById('entryDescription').value = vendor;
             document.getElementById('entryAmount').value = amount;
             document.getElementById('entryMethod').value = "Cash / Bank Transfer";
@@ -638,10 +767,15 @@
 
         // EXPORT CSV
         function exportCSV() {
-            if(ledgerTransactions.length === 0) return;
-            let csv = "ID,Date,Category,SubCategory,Fund,Description,Method,Amount\n";
+            if(ledgerTransactions.length === 0) {
+                notifyUser('There are no ledger entries to export.');
+                return;
+            }
+            const fields = ['id', 'date', 'category', 'subCategory', 'description', 'method', 'amount'];
+            const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+            let csv = "ID,Date,Category,SubCategory,Description,Method,Amount (PHP)\n";
             ledgerTransactions.forEach(t => {
-                csv += `"${t.id}","${t.date}","${t.category}","${t.subCategory}","${t.fund}","${t.description.replace(/"/g, '""')}","${t.method}",${t.amount}\n`;
+                csv += `${fields.map(field => quote(t[field])).join(',')}\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
@@ -649,5 +783,6 @@
             a.setAttribute('href', url);
             a.setAttribute('download', `${orgState.name.replace(/\s+/g, '_')}_Ledger.csv`);
             a.click();
+            window.URL.revokeObjectURL(url);
         }
     

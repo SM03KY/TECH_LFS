@@ -12,53 +12,77 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="tech_LFS.css">
 </head>
-<body class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+<body data-theme="dark" class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
 
+    <section id="authGate" class="min-h-screen flex items-center justify-center px-4 py-10">
+        <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white text-lg">
+                    <i class="fa-solid fa-building-columns"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-white">TechPass</h1>
+                    <p class="text-xs text-slate-400">Financial management system</p>
+                </div>
+            </div>
+            <form id="loginForm" class="space-y-4 hidden" onsubmit="login(event)">
+                <h2 class="text-lg font-semibold text-slate-100">Sign in</h2>
+                <label class="block text-xs font-semibold text-slate-400">Username
+                    <input id="loginUsername" required autocomplete="username" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <label class="block text-xs font-semibold text-slate-400">Password
+                    <input id="loginPassword" type="password" required autocomplete="current-password" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <button class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold">Sign in</button>
+            </form>
+            <form id="setupForm" class="space-y-4 hidden" onsubmit="setupAdmin(event)">
+                <h2 class="text-lg font-semibold text-slate-100">Create the first administrator</h2>
+                <p class="text-xs text-slate-400">This one-time setup creates the first Admin account. You can add Treasurer and Auditor accounts after signing in.</p>
+                <label class="block text-xs font-semibold text-slate-400">Full name
+                    <input id="setupName" required maxlength="120" autocomplete="name" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <label class="block text-xs font-semibold text-slate-400">Username
+                    <input id="setupUsername" required minlength="3" maxlength="64" autocomplete="username" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <label class="block text-xs font-semibold text-slate-400">Password (at least 12 characters)
+                    <input id="setupPassword" type="password" required minlength="12" autocomplete="new-password" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <button class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold">Create Admin account</button>
+            </form>
+            <p id="authMessage" role="alert" class="text-sm text-rose-400 mt-4 hidden"></p>
+        </div>
+    </section>
+
+    <div id="application" class="hidden min-h-screen flex flex-col">
     <!-- Header Navigation -->
     <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 no-print">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
+            <div class="flex items-center justify-between h-16 gap-2">
                 <!-- Branding -->
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-3 min-w-0">
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
                         <i class="fa-solid fa-building-columns"></i>
                     </div>
-                    <div>
+                    <div class="min-w-0">
                         <div class="flex items-center space-x-2">
                             <span class="font-bold text-xl tracking-tight text-white">TechPass</span>
                             <span class="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-mono" id="headerCurrencyBadge">PHP (₱)</span>
                         </div>
-                        <span class="text-xs text-slate-400 block font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[65vw] sm:max-w-none" title="TechPass: An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society">An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society</span>
-                    </div>
-                </div>
-
-                <!-- Global Quick Stats -->
-                <div class="hidden lg:flex items-center space-x-6 text-sm">
-                    <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-                        <span class="text-slate-400 text-xs block">Operating Revenue</span>
-                        <span id="headerTotalRevenue" class="font-semibold text-emerald-400">$0.00</span>
-                    </div>
-                    <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-                        <span class="text-slate-400 text-xs block">Net Surplus / (Deficit)</span>
-                        <span id="headerNetSurplus" class="font-semibold text-blue-400">$0.00</span>
-                    </div>
-                    <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-2">
-                        <div>
-                            <span class="text-slate-400 text-xs block">Balance Sheet Status</span>
-                            <span id="headerBsStatus" class="font-semibold text-emerald-400">Balanced</span>
-                        </div>
-                        <span id="headerBsDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                        <span class="system-subtitle text-xs text-slate-400 block font-medium whitespace-nowrap overflow-hidden text-ellipsis" title="TechPass: An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society">An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society</span>
                     </div>
                 </div>
 
                 <!-- Quick Actions -->
-                <div class="flex items-center space-x-2">
-                    <button onclick="resetDemoData()" title="Reset Sample Org Data" class="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition border border-slate-700 flex items-center gap-1.5">
-                        <i class="fa-solid fa-rotate-left"></i> Demo Org
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="toggleTheme()" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false" title="Switch to light mode" class="h-9 px-2 sm:px-3 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition border border-slate-700 flex items-center justify-center gap-1.5">
+                        <i id="themeToggleIcon" class="fa-solid fa-sun" aria-hidden="true"></i>
+                        <span id="themeToggleLabel" class="hidden sm:inline">Light</span>
                     </button>
-                    <button onclick="exportCSV()" class="px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition shadow-sm flex items-center gap-1.5">
-                        <i class="fa-solid fa-file-csv"></i> Export CSV
+                    <span id="sessionUser" class="hidden sm:inline text-xs text-slate-300"></span>
+                    <button id="exportButton" onclick="exportCSV()" class="h-9 px-2 sm:px-3 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition shadow-sm flex items-center gap-1.5">
+                        <i class="fa-solid fa-file-csv"></i><span class="hidden sm:inline">Export CSV</span>
                     </button>
+                    <button onclick="logout()" class="h-9 px-2 sm:px-3 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition border border-slate-700">Sign out</button>
                 </div>
             </div>
         </div>
@@ -74,14 +98,14 @@
                 <button onclick="switchTab('ledgerTab')" id="btn-ledgerTab" class="nav-tab py-3.5 px-1 inline-flex items-center border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-200">
                     <i class="fa-solid fa-book-journal-whills me-2"></i> General Ledger
                 </button>
-                <button onclick="switchTab('ocrTab')" id="btn-ocrTab" class="nav-tab py-3.5 px-1 inline-flex items-center border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-200">
+                <button data-role="admin treasurer" onclick="switchTab('ocrTab')" id="btn-ocrTab" class="nav-tab py-3.5 px-1 inline-flex items-center border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-200">
                     <i class="fa-solid fa-camera-retro me-2"></i> Photo-to-Text OCR
                     <span class="ml-2 bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded-full font-bold border border-blue-500/30">AI Extractor</span>
                 </button>
                 <button onclick="switchTab('fsTab')" id="btn-fsTab" class="nav-tab py-3.5 px-1 inline-flex items-center border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-200">
                     <i class="fa-solid fa-file-invoice-dollar me-2"></i> Financial Statements (FS)
                 </button>
-                <button onclick="switchTab('settingsTab')" id="btn-settingsTab" class="nav-tab py-3.5 px-1 inline-flex items-center border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-200">
+                <button data-role="admin" onclick="switchTab('settingsTab')" id="btn-settingsTab" class="nav-tab py-3.5 px-1 inline-flex items-center border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-200">
                     <i class="fa-solid fa-sliders me-2"></i> Org Governance
                 </button>
             </nav>
@@ -103,7 +127,7 @@
                         </div>
                     </div>
                     <div class="mt-2">
-                        <span id="dashRevenue" class="text-2xl font-bold font-mono text-emerald-400">$0.00</span>
+                        <span id="dashRevenue" class="text-2xl font-bold font-mono text-emerald-400">₱0.00</span>
                         <span class="text-xs text-slate-400 block mt-1">Includes Grants, Dues & Donations</span>
                     </div>
                 </div>
@@ -116,7 +140,7 @@
                         </div>
                     </div>
                     <div class="mt-2">
-                        <span id="dashExpense" class="text-2xl font-bold font-mono text-rose-400">$0.00</span>
+                        <span id="dashExpense" class="text-2xl font-bold font-mono text-rose-400">₱0.00</span>
                         <span class="text-xs text-slate-400 block mt-1">Program & Administrative Costs</span>
                     </div>
                 </div>
@@ -129,7 +153,7 @@
                         </div>
                     </div>
                     <div class="mt-2">
-                        <span id="dashNetSurplus" class="text-2xl font-bold font-mono text-blue-400">$0.00</span>
+                        <span id="dashNetSurplus" class="text-2xl font-bold font-mono text-blue-400">₱0.00</span>
                         <span id="dashNetMargin" class="text-xs text-slate-400 block mt-1">0% Operating Margin</span>
                     </div>
                 </div>
@@ -142,7 +166,7 @@
                         </div>
                     </div>
                     <div class="mt-2">
-                        <span id="dashCashOnHand" class="text-2xl font-bold font-mono text-indigo-400">$0.00</span>
+                        <span id="dashCashOnHand" class="text-2xl font-bold font-mono text-indigo-400">₱0.00</span>
                         <span class="text-xs text-slate-400 block mt-1">Operating Bank Balance</span>
                     </div>
                 </div>
@@ -150,13 +174,13 @@
 
             <!-- Charts Row -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Fund Allocation Chart -->
+                <!-- Income and expense summary -->
                 <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-sm">
                     <h3 class="font-bold text-slate-200 text-base mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-diagram-project text-blue-400"></i> Revenue & Expenses by Fund / Project
+                        <i class="fa-solid fa-chart-column text-blue-400"></i> Revenue & Expenses by Category
                     </h3>
                     <div class="relative h-64">
-                        <canvas id="fundAllocationChart"></canvas>
+                        <canvas id="incomeExpenseChart"></canvas>
                     </div>
                 </div>
 
@@ -175,7 +199,7 @@
         <!-- TAB 2: GENERAL LEDGER & ENTRY -->
         <section id="ledgerTab" class="tab-content hidden space-y-6">
             <!-- Add Entry Card -->
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
+            <div data-role="admin treasurer" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
                 <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
                     <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
                         <i class="fa-solid fa-square-plus text-blue-500"></i> Record Organizational Entry
@@ -208,13 +232,6 @@
                     <div>
                         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Account Subcategory</label>
                         <select id="entrySubCategory" required class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                        </select>
-                    </div>
-
-                    <!-- Fund / Project Allocation -->
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Fund / Project Allocation</label>
-                        <select id="entryFund" required class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none">
                         </select>
                     </div>
 
@@ -257,15 +274,11 @@
                 <div class="p-5 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h3 class="font-bold text-slate-100 text-base">General Journal Ledger</h3>
-                        <p class="text-xs text-slate-400">Complete historical financial log mapped to organization funds</p>
+                        <p class="text-xs text-slate-400">Complete historical financial log</p>
                     </div>
 
                     <div class="flex flex-wrap items-center gap-3">
-                        <input type="text" id="ledgerSearch" oninput="renderLedgerTable()" placeholder="Search description or fund..." class="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                        
-                        <select id="filterFund" onchange="renderLedgerTable()" class="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                            <option value="ALL">All Funds & Projects</option>
-                        </select>
+                        <input type="text" id="ledgerSearch" oninput="renderLedgerTable()" placeholder="Search description or category..." class="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none">
                     </div>
                 </div>
 
@@ -276,10 +289,9 @@
                                 <th class="py-3 px-4">Date</th>
                                 <th class="py-3 px-4">Category</th>
                                 <th class="py-3 px-4">Subcategory</th>
-                                <th class="py-3 px-4">Fund / Project</th>
                                 <th class="py-3 px-4">Description</th>
                                 <th class="py-3 px-4 text-right">Amount</th>
-                                <th class="py-3 px-4 text-center">Actions</th>
+                                <th data-role="admin treasurer" class="py-3 px-4 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="ledgerTableBody" class="divide-y divide-slate-800/60 text-slate-300">
@@ -295,7 +307,7 @@
                 <div class="max-w-2xl">
                     <span class="px-2.5 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full text-xs font-semibold uppercase tracking-wider">AI Photo-to-Text OCR Parser</span>
                     <h2 class="text-2xl font-bold text-white mt-2">Organizational Invoice & Receipt Scanner</h2>
-                    <p class="text-sm text-slate-300 mt-1">Upload receipt images or select preset organizational expense samples. The scanner extracts key values and maps them directly to your general ledger and target funds.</p>
+                    <p class="text-sm text-slate-300 mt-1">Upload receipt images or select preset expense samples. Review the extracted values before adding them to the ledger.</p>
                 </div>
             </div>
 
@@ -308,15 +320,15 @@
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <button onclick="loadOcrPreset('gala')" class="p-2.5 text-left border border-slate-800 hover:border-blue-500 bg-slate-950/60 rounded-lg transition group">
                                 <span class="text-xs font-bold text-slate-200 group-hover:text-blue-400 block">Annual Gala Catering</span>
-                                <span class="text-[11px] text-slate-400">$1,850.00 â€¢ Special Events</span>
+                                <span class="text-[11px] text-slate-400">₱1,850.00 â€¢ Special Events</span>
                             </button>
                             <button onclick="loadOcrPreset('grant')" class="p-2.5 text-left border border-slate-800 hover:border-blue-500 bg-slate-950/60 rounded-lg transition group">
                                 <span class="text-xs font-bold text-slate-200 group-hover:text-blue-400 block">Grant Lab Hardware</span>
-                                <span class="text-[11px] text-slate-400">$3,400.00 â€¢ Research Grant</span>
+                                <span class="text-[11px] text-slate-400">₱3,400.00 â€¢ Research Grant</span>
                             </button>
                             <button onclick="loadOcrPreset('office')" class="p-2.5 text-left border border-slate-800 hover:border-blue-500 bg-slate-950/60 rounded-lg transition group">
                                 <span class="text-xs font-bold text-slate-200 group-hover:text-blue-400 block">HQ Utilities & Paper</span>
-                                <span class="text-[11px] text-slate-400">$215.80 â€¢ Operations</span>
+                                <span class="text-[11px] text-slate-400">₱215.80 â€¢ Operations</span>
                             </button>
                         </div>
                     </div>
@@ -379,19 +391,15 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-3">
+                            <div>
                                 <div>
                                     <label class="text-xs font-semibold text-slate-400 block mb-1">Suggested Subcategory</label>
                                     <select id="ocrSubCat" class="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
-                                        <option value="Event Expense">Event Expense</option>
+                                        <option value="Event Expenses">Event Expenses</option>
+                                        <option value="Program Expenses">Program Expenses</option>
                                         <option value="Research & Lab Supplies">Research & Lab Supplies</option>
                                         <option value="Office & Admin Expense">Office & Admin Expense</option>
                                         <option value="Travel & Transportation">Travel & Transportation</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="text-xs font-semibold text-slate-400 block mb-1">Target Fund Allocation</label>
-                                    <select id="ocrFund" class="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
                                     </select>
                                 </div>
                             </div>
@@ -457,7 +465,7 @@
                         <div id="fsRevRows" class="divide-y divide-slate-800/60 py-2"></div>
                         <div class="flex justify-between font-bold text-white pt-2 border-t border-slate-700">
                             <span>TOTAL REVENUES & SUPPORT</span>
-                            <span id="fsTotalRev" class="text-emerald-400 font-mono">$0.00</span>
+                            <span id="fsTotalRev" class="text-emerald-400 font-mono">₱0.00</span>
                         </div>
                     </div>
 
@@ -470,7 +478,7 @@
                         <div id="fsExpRows" class="divide-y divide-slate-800/60 py-2"></div>
                         <div class="flex justify-between font-bold text-white pt-2 border-t border-slate-700">
                             <span>TOTAL EXPENSES</span>
-                            <span id="fsTotalExp" class="text-rose-400 font-mono">$0.00</span>
+                            <span id="fsTotalExp" class="text-rose-400 font-mono">₱0.00</span>
                         </div>
                     </div>
 
@@ -479,7 +487,7 @@
                         <span class="text-slate-200 flex items-center gap-2">
                             <i class="fa-solid fa-coins text-amber-400"></i> NET OPERATING SURPLUS / (DEFICIT)
                         </span>
-                        <span id="fsNetSurplus" class="font-mono text-emerald-400 text-xl">$0.00</span>
+                        <span id="fsNetSurplus" class="font-mono text-emerald-400 text-xl">₱0.00</span>
                     </div>
                 </div>
             </div>
@@ -505,7 +513,7 @@
                         <div id="fsAssetRows" class="divide-y divide-slate-800/60"></div>
                         <div class="bg-slate-950 p-3 rounded-lg flex justify-between font-bold text-white border border-slate-800">
                             <span>TOTAL ASSETS</span>
-                            <span id="fsTotalAssets" class="text-blue-400 font-mono">$0.00</span>
+                            <span id="fsTotalAssets" class="text-blue-400 font-mono">₱0.00</span>
                         </div>
                     </div>
 
@@ -519,7 +527,7 @@
                             <div id="fsLiabRows" class="divide-y divide-slate-800/60"></div>
                             <div class="flex justify-between font-semibold text-slate-300 pt-1 border-t border-slate-800">
                                 <span>Total Liabilities</span>
-                                <span id="fsTotalLiab">$0.00</span>
+                                <span id="fsTotalLiab">₱0.00</span>
                             </div>
                         </div>
 
@@ -531,17 +539,17 @@
                             <div id="fsEquityRows" class="divide-y divide-slate-800/60"></div>
                             <div class="flex justify-between font-semibold text-slate-300 pt-1">
                                 <span>Current Accumulated Net Surplus</span>
-                                <span id="fsAccumSurplus" class="text-emerald-400 font-mono">$0.00</span>
+                                <span id="fsAccumSurplus" class="text-emerald-400 font-mono">₱0.00</span>
                             </div>
                             <div class="flex justify-between font-semibold text-slate-300 pt-1 border-t border-slate-800">
                                 <span>Total Net Assets</span>
-                                <span id="fsTotalEquity">$0.00</span>
+                                <span id="fsTotalEquity">₱0.00</span>
                             </div>
                         </div>
 
                         <div class="bg-slate-950 p-3 rounded-lg flex justify-between font-bold text-white border border-slate-800">
                             <span>TOTAL LIABILITIES & NET ASSETS</span>
-                            <span id="fsTotalLiabEquity" class="text-indigo-400 font-mono">$0.00</span>
+                            <span id="fsTotalLiabEquity" class="text-indigo-400 font-mono">₱0.00</span>
                         </div>
                     </div>
                 </div>
@@ -560,7 +568,7 @@
                         <div id="cfOpRows" class="divide-y divide-slate-800/60 py-2"></div>
                         <div class="flex justify-between font-semibold text-slate-200 py-1.5 px-3 bg-slate-950 rounded">
                             <span>Net Cash Provided by Operating Activities</span>
-                            <span id="cfTotalOp" class="font-mono font-bold">$0.00</span>
+                            <span id="cfTotalOp" class="font-mono font-bold">₱0.00</span>
                         </div>
                     </div>
 
@@ -571,18 +579,18 @@
                         </div>
                         <div class="flex justify-between font-semibold text-slate-200 py-1.5 px-3 bg-slate-950 rounded">
                             <span>Net Cash Used in Investing Activities</span>
-                            <span id="cfTotalInv" class="font-mono font-bold">$0.00</span>
+                            <span id="cfTotalInv" class="font-mono font-bold">₱0.00</span>
                         </div>
                     </div>
 
                     <div class="border-t border-slate-700 pt-4 space-y-2">
                         <div class="flex justify-between font-bold text-white text-base">
                             <span>NET CHANGE IN CASH & BANK BALANCES</span>
-                            <span id="cfNetCashChange" class="font-mono text-blue-400">$0.00</span>
+                            <span id="cfNetCashChange" class="font-mono text-blue-400">₱0.00</span>
                         </div>
                         <div class="flex justify-between font-bold text-white text-base bg-blue-500/10 p-3 rounded-lg border border-blue-500/20">
                             <span>ENDING CASH AND BANK BALANCE</span>
-                            <span id="cfEndingCash" class="font-mono text-blue-400">$0.00</span>
+                            <span id="cfEndingCash" class="font-mono text-blue-400">₱0.00</span>
                         </div>
                     </div>
                 </div>
@@ -596,7 +604,7 @@
                     <h2 class="text-xl font-bold text-white flex items-center gap-2">
                         <i class="fa-solid fa-sliders text-blue-400"></i> Organization Governance & Settings
                     </h2>
-                    <p class="text-xs text-slate-400 mt-1">Configure profile details, fiscal year boundaries, and fund allocations</p>
+                    <p class="text-xs text-slate-400 mt-1">Manage organization details and user access</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-slate-800 pt-6 text-sm">
@@ -616,16 +624,32 @@
                         </button>
                     </div>
 
-                    <!-- Fund Manager -->
                     <div class="space-y-4">
-                        <h3 class="font-bold text-slate-200 uppercase text-xs tracking-wider">Manage Funds & Projects</h3>
-                        <div class="flex gap-2">
-                            <input type="text" id="newFundInput" placeholder="New Fund Name (e.g., Disaster Relief Fund)" class="flex-1 px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200 text-sm">
-                            <button onclick="addFund()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Add Fund</button>
-                        </div>
-                        <div class="border border-slate-800 rounded-lg p-3 bg-slate-950 max-h-48 overflow-y-auto space-y-2" id="fundsListContainer">
-                        </div>
+                        <h3 class="font-bold text-slate-200 uppercase text-xs tracking-wider">Role responsibilities</h3>
+                        <ul class="text-xs text-slate-400 space-y-2">
+                            <li><strong class="text-slate-200">Admin:</strong> manage users, organization settings, and all financial records.</li>
+                            <li><strong class="text-slate-200">Treasurer:</strong> record and maintain ledger entries, process receipt scans, and prepare reports.</li>
+                            <li><strong class="text-slate-200">Auditor:</strong> review the dashboard, ledger, and financial statements; no edits.</li>
+                        </ul>
                     </div>
+                </div>
+
+                <div class="border-t border-slate-800 pt-6 space-y-4">
+                    <h3 class="font-bold text-slate-200 uppercase text-xs tracking-wider">User accounts</h3>
+                    <form id="userForm" onsubmit="createUser(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <input id="userName" required maxlength="120" placeholder="Full name" class="px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                        <input id="userUsername" required minlength="3" maxlength="64" placeholder="Username" autocomplete="off" class="px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                        <input id="userPassword" type="password" required minlength="12" placeholder="Temporary password (12+ chars)" autocomplete="new-password" class="px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                        <div class="flex gap-2">
+                            <select id="userRole" required class="min-w-0 flex-1 px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                                <option value="treasurer">Treasurer</option>
+                                <option value="auditor">Auditor</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                            <button class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Add user</button>
+                        </div>
+                    </form>
+                    <div id="usersList" class="border border-slate-800 rounded-lg p-3 bg-slate-950 space-y-2"></div>
                 </div>
             </div>
         </section>
@@ -638,6 +662,7 @@
             TechPass &bull; An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society
         </div>
     </footer>
+    </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
     <script src="tech_LFS.js"></script>
