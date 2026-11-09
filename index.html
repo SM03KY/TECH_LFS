@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TechLedger - Organizational Financial Ledger & Statement Generator</title>
+    <title>TechPass: An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome Icons -->
@@ -25,10 +25,10 @@
                     </div>
                     <div>
                         <div class="flex items-center space-x-2">
-                            <span class="font-bold text-xl tracking-tight text-white" id="headerOrgName">Global Tech Foundation</span>
+                            <span class="font-bold text-xl tracking-tight text-white">TechPass</span>
                             <span class="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-mono" id="headerCurrencyBadge">PHP (₱)</span>
                         </div>
-                        <span class="text-xs text-slate-400 block font-medium">Organizational Fund Ledger & Auto FS Engine</span>
+                        <span class="text-xs text-slate-400 block font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[65vw] sm:max-w-none" title="TechPass: An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society">An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society</span>
                     </div>
                 </div>
 
@@ -325,16 +325,22 @@
                     <div class="bg-slate-950 border-2 border-dashed border-slate-800 rounded-2xl min-h-[380px] flex items-center justify-center relative overflow-hidden text-center group p-4">
                         <div id="ocrUploadPrompt" class="space-y-3 p-6">
                             <div class="w-16 h-16 bg-slate-900 border border-slate-800 rounded-full flex items-center justify-center text-blue-400 mx-auto text-2xl group-hover:scale-105 transition duration-300">
-                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <i class="fa-solid fa-camera"></i>
                             </div>
                             <div>
-                                <p class="text-slate-200 font-medium text-sm">Upload receipt image or drag image here</p>
-                                <p class="text-xs text-slate-400 mt-1">Supports PNG, JPG, WEBP formats</p>
+                                <p class="text-slate-200 font-medium text-sm">Take a photo of your receipt or choose an image</p>
+                                <p class="text-xs text-slate-400 mt-1">On mobile, use your camera to capture the receipt</p>
                             </div>
-                            <label class="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-sm transition">
-                                Select Photo File
-                                <input type="file" accept="image/*" class="hidden" onchange="handleImageFile(event)">
-                            </label>
+                            <div class="flex flex-col sm:flex-row justify-center gap-2">
+                                <label class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-sm transition">
+                                    <i class="fa-solid fa-camera"></i> Take Photo
+                                    <input id="ocrCameraInput" type="file" accept="image/*" capture="environment" class="hidden" onchange="handleImageFile(event)">
+                                </label>
+                                <label class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold cursor-pointer shadow-sm transition border border-slate-700">
+                                    <i class="fa-solid fa-images"></i> Choose Photo
+                                    <input id="ocrFileInput" type="file" accept="image/*" class="hidden" onchange="handleImageFile(event)">
+                                </label>
+                            </div>
                         </div>
 
                         <!-- Image Preview & Laser Beam Overlay -->
@@ -629,7 +635,7 @@
     <!-- Footer -->
     <footer class="bg-slate-900 border-t border-slate-800 py-4 mt-auto no-print">
         <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500">
-            TechLedger Organizational System &bull; GAAP & Non-Profit Compliant Ledger Engine &bull; Auto Balance Sheet Sync
+            TechPass &bull; An AI-Assisted Financial Statement Generation for CCIS - Information Technology Society
         </div>
     </footer>
 

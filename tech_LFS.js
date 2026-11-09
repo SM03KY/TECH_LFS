@@ -105,7 +105,6 @@
         }
 
         function applyOrgConfig() {
-            document.getElementById('headerOrgName').textContent = orgState.name;
             document.getElementById('headerCurrencyBadge').textContent = 'PHP (₱)';
             document.querySelectorAll('.currencySymbol').forEach(el => el.textContent = '₱');
 
@@ -539,11 +538,19 @@
         }
 
         function handleImageFile(e) {
-            const file = e.target.files[0];
+            const input = e.target;
+            const file = input.files[0];
             if(!file) return;
+            input.value = '';
 
             const reader = new FileReader();
             reader.onload = function(evt) {
+                if(typeof evt.target.result !== 'string') {
+                    document.getElementById('ocrStatusBadge').textContent = 'Could not load image';
+                    document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+                    return;
+                }
+
                 activeOcrPreset = {
                     vendor: "Uploaded Vendor Receipt",
                     date: new Date().toISOString().split('T')[0],
@@ -557,8 +564,17 @@
                 document.getElementById('ocrUploadPrompt').classList.add('hidden');
                 document.getElementById('ocrPreviewContainer').classList.remove('hidden');
                 document.getElementById('ocrImgPreview').src = evt.target.result;
+                document.getElementById('ocrStatusBadge').textContent = 'Image Ready for Scan';
+                document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400';
+                document.getElementById('ocrBoxOverlays').innerHTML = '';
 
                 document.getElementById('ocrScanBtn').disabled = false;
+                document.getElementById('ocrPostBtn').disabled = true;
+            };
+            reader.onerror = function() {
+                document.getElementById('ocrStatusBadge').textContent = 'Could not load image';
+                document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+                document.getElementById('ocrScanBtn').disabled = true;
                 document.getElementById('ocrPostBtn').disabled = true;
             };
             reader.readAsDataURL(file);
