@@ -51,8 +51,32 @@
 
         const currencySymbols = { PHP: "₱" };
 
+        function setPasswordVisibility(input, button, visible) {
+            input.type = visible ? 'text' : 'password';
+            button.setAttribute('aria-pressed', String(visible));
+            button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+            button.innerHTML = `<i class="fa-regular ${visible ? 'fa-eye-slash' : 'fa-eye'}" aria-hidden="true"></i>`;
+        }
+
+        function initializePasswordToggles() {
+            document.querySelectorAll('.password-toggle').forEach(button => {
+                button.addEventListener('click', () => {
+                    const input = button.parentElement.querySelector('input');
+                    setPasswordVisibility(input, button, input.type !== 'text');
+                });
+            });
+            document.querySelectorAll('form').forEach(form => {
+                form.addEventListener('reset', () => {
+                    form.querySelectorAll('.password-toggle').forEach(button => {
+                        setPasswordVisibility(button.parentElement.querySelector('input'), button, false);
+                    });
+                });
+            });
+        }
+
         window.onload = async function() {
             initializeTheme();
+            initializePasswordToggles();
             document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
             const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
             document.querySelectorAll('.currentDateSpan').forEach(el => el.textContent = todayStr);
