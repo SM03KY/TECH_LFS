@@ -4,9 +4,12 @@
 
 1. Copy the project into `C:\xampp\htdocs\Tech`.
 2. Start **Apache** and **MySQL** in the XAMPP Control Panel.
-3. Open `http://localhost/phpmyadmin`, import `api/schema.sql`, and confirm the `techpass` database and tables were created.
+3. Open `http://localhost/phpmyadmin`, import `api/schema.sql`, and confirm the `techpass` database and empty tables were created. The schema inserts no users, organization settings, or sample transactions.
 4. If your MySQL account is not the XAMPP default `root` account with a blank password, set `TECHPASS_DB_HOST`, `TECHPASS_DB_PORT`, `TECHPASS_DB_NAME`, `TECHPASS_DB_USER`, and `TECHPASS_DB_PASSWORD` in the Apache/PHP environment, or update the local defaults in `api/config.php`.
-5. Open `http://localhost/Tech/`. The first visit prompts you to create the one-time Admin account. After that, sign in and use **Org Governance → User accounts** to create Treasurer and Auditor accounts.
+5. To create the initial Admin account from a command prompt, run `C:\xampp\php\php.exe C:\xampp\htdocs\Tech\setup-admin.php`. It creates the account only when the users table is empty. The account is `admin` with temporary password `ChangeMe123!`; the app requires changing it before access. Do not keep using the temporary password.
+6. Alternatively, open `http://localhost/Tech/` and use the one-time Admin setup form to select your own credentials. This creates the Admin account and minimum organization settings; the ledger remains empty. After signing in, use **Org Governance → User accounts** to create Treasurer and Auditor accounts.
+
+If upgrading a database created from an earlier version of this schema, run `ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0;` in phpMyAdmin before using the command-line setup script.
 
 Use the site through Apache (`http://localhost/Tech/`), not by opening `index.html` from the filesystem. PHP must be enabled and `pdo_mysql` must be available.
 
@@ -18,7 +21,7 @@ Use the site through Apache (`http://localhost/Tech/`), not by opening `index.ht
 | Treasurer | Create, edit, delete, export, and review financial records; use receipt scanning and prepare reports. |
 | Auditor | Read-only access to the dashboard, ledger, financial statements, and CSV export. |
 
-Authorization is checked by the PHP API as well as by the interface. Passwords are stored as PHP password hashes; sessions use HTTP-only, same-site cookies and state-changing requests require a CSRF token.
+Authorization is checked by the PHP API as well as by the interface. Passwords are stored as PHP password hashes; sessions use HTTP-only, same-site cookies and state-changing requests require a CSRF token. The command-line setup account is forced to change its temporary password before other actions are permitted.
 
 ## Data and deployment notes
 

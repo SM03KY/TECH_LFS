@@ -59,7 +59,7 @@
             populateSubCategories();
             try {
                 const result = await apiRequest('bootstrap');
-                if (result.authenticated) initializeApplication(result);
+                if (result.authenticated) continueAuthentication(result);
                 else showAuthForm(result.setupRequired ? 'setup' : 'login');
             } catch (error) {
                 showAuthForm('login', error.message);
@@ -87,6 +87,7 @@
             document.getElementById('application').classList.add('hidden');
             document.getElementById('setupForm').classList.toggle('hidden', mode !== 'setup');
             document.getElementById('loginForm').classList.toggle('hidden', mode !== 'login');
+            document.getElementById('passwordChangeForm').classList.toggle('hidden', mode !== 'passwordChange');
             const messageElement = document.getElementById('authMessage');
             messageElement.textContent = message;
             messageElement.classList.toggle('hidden', !message);
@@ -107,6 +108,16 @@
             switchTab('dashTab');
         }
 
+        function continueAuthentication(data) {
+            currentUser = data.user;
+            csrfToken = data.csrfToken;
+            if (data.needsPasswordChange) {
+                showAuthForm('passwordChange');
+                return;
+            }
+            initializeApplication(data);
+        }
+
         async function login(event) {
             event.preventDefault();
             try {
@@ -118,7 +129,7 @@
                     }
                 });
                 document.getElementById('loginForm').reset();
-                initializeApplication(result);
+                continueAuthentication(result);
             } catch (error) {
                 showAuthForm('login', error.message);
             }
@@ -136,9 +147,31 @@
                     }
                 });
                 document.getElementById('setupForm').reset();
-                initializeApplication(result);
+                continueAuthentication(result);
             } catch (error) {
                 showAuthForm('setup', error.message);
+            }
+        }
+
+        async function changePassword(event) {
+            event.preventDefault();
+            const newPassword = document.getElementById('newPassword').value;
+            if (newPassword !== document.getElementById('confirmPassword').value) {
+                showAuthForm('passwordChange', 'The new passwords do not match.');
+                return;
+            }
+            try {
+                const result = await apiRequest('change_password', {
+                    method: 'POST',
+                    body: {
+                        currentPassword: document.getElementById('currentPassword').value,
+                        newPassword
+                    }
+                });
+                document.getElementById('passwordChangeForm').reset();
+                continueAuthentication(result);
+            } catch (error) {
+                showAuthForm('passwordChange', error.message);
             }
         }
 

@@ -48,7 +48,10 @@ function activeUser(PDO $db): ?array
         return null;
     }
 
-    $statement = $db->prepare('SELECT id, name, username, role FROM users WHERE id = ? AND is_active = 1');
+    $statement = $db->prepare(
+        'SELECT id, name, username, role, must_change_password
+         FROM users WHERE id = ? AND is_active = 1'
+    );
     $statement->execute([$_SESSION['user_id']]);
     $user = $statement->fetch();
     if (!$user) {
@@ -107,7 +110,13 @@ function appData(PDO $db, array $user): array
 
     return [
         'authenticated' => true,
-        'user' => $user,
+        'user' => [
+            'id' => (int) $user['id'],
+            'name' => $user['name'],
+            'username' => $user['username'],
+            'role' => $user['role'],
+        ],
+        'needsPasswordChange' => (bool) $user['must_change_password'],
         'csrfToken' => csrfToken(),
         'org' => $settings,
         'transactions' => $transactions,
@@ -119,7 +128,10 @@ function establishSession(PDO $db, int $userId): void
     session_regenerate_id(true);
     $_SESSION['user_id'] = $userId;
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    $statement = $db->prepare('SELECT id, name, username, role FROM users WHERE id = ? AND is_active = 1');
+    $statement = $db->prepare(
+        'SELECT id, name, username, role, must_change_password
+         FROM users WHERE id = ? AND is_active = 1'
+    );
     $statement->execute([$userId]);
     $user = $statement->fetch();
     if (!$user) {
@@ -216,7 +228,10 @@ try {
         }
         try {
             $db->beginTransaction();
-            $statement = $db->prepare("INSERT INTO users (name, username, password_hash, role) VALUES (?, ?, ?, 'admin')");
+            $statement = $db->prepare(
+                "INSERT INTO users (name, username, password_hash, role, must_change_password)
+                 VALUES (?, ?, ?, 'admin', 0)"
+            );
             $statement->execute([$name, $username, password_hash($password, PASSWORD_DEFAULT)]);
             $userId = (int) $db->lastInsertId();
             $settings = $db->prepare(
@@ -251,6 +266,36 @@ try {
     }
 
     $user = requireUser($db);
+
+    if ($user['must_change_password'] && !in_array($action, ['change_password', 'logout'], true)) {
+        respond(['error' => 'Change the temporary password before continuing.'], 403);
+    }
+
+    if ($action === 'change_password') {
+        requireMethod('POST');
+        requireCsrf();
+        $body = requestBody();
+        $currentPassword = (string) ($body['currentPassword'] ?? '');
+        $newPassword = (string) ($body['newPassword'] ?? '');
+        if (strlen($newPassword) < 12 || strlen($newPassword) > 4096) {
+            respond(['error' => 'New password must be at least 12 characters.'], 422);
+        }
+        if ($currentPassword === $newPassword) {
+            respond(['error' => 'Choose a new password different from the temporary password.'], 422);
+        }
+        $statement = $db->prepare('SELECT password_hash FROM users WHERE id = ? AND is_active = 1');
+        $statement->execute([$user['id']]);
+        $account = $statement->fetch();
+        if (!$account || !password_verify($currentPassword, $account['password_hash'])) {
+            respond(['error' => 'The current password is incorrect.'], 401);
+        }
+        $statement = $db->prepare(
+            'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?'
+        );
+        $statement->execute([password_hash($newPassword, PASSWORD_DEFAULT), $user['id']]);
+        $updatedUser = activeUser($db);
+        respond(appData($db, $updatedUser));
+    }
 
     if ($action === 'logout') {
         requireMethod('POST');

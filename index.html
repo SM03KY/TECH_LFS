@@ -49,6 +49,20 @@
                 </label>
                 <button class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold">Create Admin account</button>
             </form>
+            <form id="passwordChangeForm" class="space-y-4 hidden" onsubmit="changePassword(event)">
+                <h2 class="text-lg font-semibold text-slate-100">Change the temporary password</h2>
+                <p class="text-xs text-slate-400">Choose a new password with at least 12 characters to continue.</p>
+                <label class="block text-xs font-semibold text-slate-400">Temporary password
+                    <input id="currentPassword" type="password" required autocomplete="current-password" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <label class="block text-xs font-semibold text-slate-400">New password
+                    <input id="newPassword" type="password" required minlength="12" autocomplete="new-password" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <label class="block text-xs font-semibold text-slate-400">Confirm new password
+                    <input id="confirmPassword" type="password" required minlength="12" autocomplete="new-password" class="mt-1 w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200">
+                </label>
+                <button class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold">Change password and continue</button>
+            </form>
             <p id="authMessage" role="alert" class="text-sm text-rose-400 mt-4 hidden"></p>
         </div>
     </section>
