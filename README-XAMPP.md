@@ -1,4 +1,4 @@
-# TechPass on XAMPP
+# local host using xampp
 
 ## Setup
 
