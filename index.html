@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Tesseract.js OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <link rel="stylesheet" href="tech_LFS.css">
 </head>
 <body data-theme="dark" class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
@@ -288,6 +290,11 @@
                         </select>
                     </div>
 
+                    <div class="sm:col-span-2 lg:col-span-4">
+                        <label for="entryManualDetails" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Manual Details / Items (Optional)</label>
+                        <textarea id="entryManualDetails" rows="3" maxlength="10000" placeholder="Describe items bought, sold, received, or spent; add quantities, item costs, and the purpose or income source." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+                    </div>
+
                     <div class="sm:col-span-2 lg:col-span-4 flex justify-end gap-3 pt-2">
                         <button type="button" onclick="cancelEditEntry()" id="cancelEditBtn" class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-medium transition">
                             Cancel
@@ -308,7 +315,7 @@
                     </div>
 
                     <div class="flex flex-wrap items-center gap-3">
-                        <input type="text" id="ledgerSearch" oninput="renderLedgerTable()" placeholder="Search description or category..." class="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        <input type="text" id="ledgerSearch" oninput="renderLedgerTable()" placeholder="Search description, details, or category..." class="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none">
                     </div>
                 </div>
 
@@ -320,6 +327,8 @@
                                 <th class="py-3 px-4">Category</th>
                                 <th class="py-3 px-4">Subcategory</th>
                                 <th class="py-3 px-4">Description</th>
+                                <th class="py-3 px-4">Manual Details / Items</th>
+                                <th class="py-3 px-4">Raw Parsed Text</th>
                                 <th class="py-3 px-4 text-right">Amount</th>
                                 <th data-role="admin treasurer" class="py-3 px-4 text-center">Actions</th>
                             </tr>
@@ -329,6 +338,25 @@
                     </table>
                 </div>
             </div>
+
+            <dialog id="receiptDialog" aria-labelledby="receiptDialogTitle" class="w-[min(90vw,48rem)] max-h-[90vh] rounded-2xl border border-slate-700 bg-slate-900 p-0 text-slate-100 shadow-2xl">
+                <div class="flex items-center justify-between border-b border-slate-800 p-4">
+                    <h2 id="receiptDialogTitle" class="font-bold">Transaction Details</h2>
+                    <button type="button" onclick="document.getElementById('receiptDialog').close()" class="rounded-lg px-3 py-1 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Close receipt details">Close</button>
+                </div>
+                <div class="space-y-4 overflow-y-auto p-4">
+                    <img id="receiptDialogImage" alt="Receipt photo used for OCR" class="hidden max-h-[60vh] w-full rounded-lg border border-slate-700 bg-slate-950 object-contain">
+                    <p id="receiptDialogNoImage" class="hidden text-xs text-slate-400">No receipt photo was saved for this entry.</p>
+                    <div>
+                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Manual Details / Items</h3>
+                        <pre id="receiptDialogManualDetails" class="whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300"></pre>
+                    </div>
+                    <div>
+                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Raw Parsed Text</h3>
+                        <pre id="receiptDialogText" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300"></pre>
+                    </div>
+                </div>
+            </dialog>
         </section>
 
         <!-- TAB 3: PHOTO-TO-TEXT RECEIPT SCANNER -->

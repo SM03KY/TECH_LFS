@@ -4,12 +4,23 @@
 
 1. Copy the project into `C:\xampp\htdocs\Tech`.
 2. Start **Apache** and **MySQL** in the XAMPP Control Panel.
-3. Open `http://localhost/phpmyadmin`, import `api/schema.sql`, and confirm the `techpass` database and empty tables were created. The schema inserts no users, organization settings, or sample transactions.
+3. Open `http://localhost/phpmyadmin`, import `api/techpass.sql`, and confirm the `techpass` database and empty tables were created. The schema inserts no users, organization settings, or sample transactions.
 4. If your MySQL account is not the XAMPP default `root` account with a blank password, set `TECHPASS_DB_HOST`, `TECHPASS_DB_PORT`, `TECHPASS_DB_NAME`, `TECHPASS_DB_USER`, and `TECHPASS_DB_PASSWORD` in the Apache/PHP environment, or update the local defaults in `api/config.php`.
 5. To create the initial Admin account from a command prompt, run `C:\xampp\php\php.exe C:\xampp\htdocs\Tech\setup-admin.php`. It creates the account only when the users table is empty. The account is `admin` with temporary password `ChangeMe123!`; the app requires changing it before access. Do not keep using the temporary password.
 6. Alternatively, open `http://localhost/Tech/` and use the one-time Admin setup form to select your own credentials. This creates the Admin account and minimum organization settings; the ledger remains empty. After signing in, use **Org Governance → User accounts** to create Treasurer and Auditor accounts.
 
-If upgrading a database created from an earlier version of this schema, run `ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0;` in phpMyAdmin before using the command-line setup script.
+If upgrading an existing database, run the following in phpMyAdmin before using the app:
+
+```sql
+ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE transactions
+    ADD COLUMN manual_details TEXT NULL,
+    ADD COLUMN raw_ocr_text TEXT NULL,
+    ADD COLUMN receipt_image MEDIUMBLOB NULL,
+    ADD COLUMN receipt_image_type VARCHAR(32) NULL;
+```
+
+Skip any `ADD COLUMN` for a column that already exists. Manual item/purpose details and OCR text are stored with each transaction; uploaded receipt photos are resized and limited to 3 MB before saving.
 
 Use the site through Apache (`http://localhost/Tech/`), not by opening `index.html` from the filesystem. PHP must be enabled and `pdo_mysql` must be available.
 

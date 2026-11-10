@@ -31,6 +31,8 @@
             background-color: rgba(59, 130, 246, 0.2);
             transition: all 0.3s ease;
         }
+        #receiptDialog::backdrop { background: rgba(2, 6, 23, 0.75); }
+        #receiptDialog[open] { display: block; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .system-subtitle { max-width: min(52vw, 36rem); }

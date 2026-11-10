@@ -99,12 +99,15 @@ function appData(PDO $db, array $user): array
     $settings = $db->query('SELECT name, fiscal_year_start AS fiscalYear, currency FROM organization_settings WHERE id = 1')->fetch();
     $transactions = $db->query(
         'SELECT id, entry_date AS date, category, sub_category AS subCategory, description,
+                manual_details AS manualDetails, raw_ocr_text AS rawOcrText,
+                receipt_image IS NOT NULL AS hasReceiptPhoto,
                 CAST(amount AS DECIMAL(14, 2)) AS amount, payment_method AS method
          FROM transactions ORDER BY entry_date DESC, created_at DESC'
     )->fetchAll();
 
     foreach ($transactions as &$transaction) {
         $transaction['amount'] = (float) $transaction['amount'];
+        $transaction['hasReceiptPhoto'] = (bool) $transaction['hasReceiptPhoto'];
     }
     unset($transaction);
 
@@ -175,6 +178,11 @@ function validateTransaction(array $input): array
     $description = trim((string) ($input['description'] ?? ''));
     $method = (string) ($input['method'] ?? '');
     $amount = filter_var($input['amount'] ?? null, FILTER_VALIDATE_FLOAT);
+    $manualDetails = $input['manualDetails'] ?? '';
+    $rawOcrText = $input['rawOcrText'] ?? '';
+    $receiptImage = $input['receiptImage'] ?? '';
+    $receiptImageBytes = null;
+    $receiptImageType = null;
 
     $dateParts = explode('-', $date);
     if (count($dateParts) !== 3 || !checkdate((int) $dateParts[1], (int) $dateParts[2], (int) $dateParts[0])) {
@@ -195,8 +203,31 @@ function validateTransaction(array $input): array
     if ($id !== '' && !preg_match('/^[a-f0-9-]{36}$/i', $id)) {
         respond(['error' => 'Invalid transaction identifier.'], 422);
     }
+    if (!is_string($manualDetails) || strlen($manualDetails) > 40000) {
+        respond(['error' => 'Manual details must be 10,000 characters or fewer.'], 422);
+    }
+    if (!is_string($rawOcrText) || strlen($rawOcrText) > 20000) {
+        respond(['error' => 'Receipt text must be 20,000 bytes or fewer.'], 422);
+    }
+    if ($receiptImage !== '' && $receiptImage !== null) {
+        if (!is_string($receiptImage) || !preg_match('/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+\/]*={0,2})$/', $receiptImage, $matches)) {
+            respond(['error' => 'The receipt image must be a valid JPEG, PNG, or WebP image.'], 422);
+        }
+        $receiptImageBytes = base64_decode($matches[2], true);
+        if ($receiptImageBytes === false || strlen($receiptImageBytes) > 3 * 1024 * 1024) {
+            respond(['error' => 'Receipt images must be 3 MB or smaller.'], 422);
+        }
+        $imageInfo = @getimagesizefromstring($receiptImageBytes);
+        if (!$imageInfo || $imageInfo['mime'] !== $matches[1]) {
+            respond(['error' => 'The receipt image data is invalid.'], 422);
+        }
+        $receiptImageType = $matches[1];
+    }
 
-    return [$id, $date, $category, $subCategory, $description, round((float) $amount, 2), $method];
+    return [
+        $id, $date, $category, $subCategory, $description, round((float) $amount, 2), $method, $manualDetails,
+        $rawOcrText === '' ? null : $rawOcrText, $receiptImageBytes, $receiptImageType,
+    ];
 }
 
 try {
@@ -297,6 +328,23 @@ try {
         respond(appData($db, $updatedUser));
     }
 
+    if ($action === 'transaction_receipt') {
+        requireMethod('GET');
+        $id = (string) ($_GET['id'] ?? '');
+        if (!preg_match('/^[a-f0-9-]{36}$/i', $id)) {
+            respond(['error' => 'Invalid transaction identifier.'], 422);
+        }
+        $statement = $db->prepare('SELECT receipt_image, receipt_image_type FROM transactions WHERE id = ?');
+        $statement->execute([$id]);
+        $receipt = $statement->fetch();
+        if (!$receipt || $receipt['receipt_image'] === null) {
+            respond(['error' => 'No receipt photo is stored for this entry.'], 404);
+        }
+        respond([
+            'image' => 'data:' . $receipt['receipt_image_type'] . ';base64,' . base64_encode($receipt['receipt_image']),
+        ]);
+    }
+
     if ($action === 'logout') {
         requireMethod('POST');
         requireCsrf();
@@ -317,17 +365,20 @@ try {
         if (!isset($body['transaction']) || !is_array($body['transaction'])) {
             respond(['error' => 'Transaction details are required.'], 422);
         }
-        [$id, $date, $category, $subCategory, $description, $amount, $paymentMethod] = validateTransaction($body['transaction']);
+        [$id, $date, $category, $subCategory, $description, $amount, $paymentMethod, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType] = validateTransaction($body['transaction']);
         if ($id === '') {
             $id = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
                 random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff),
                 random_int(0, 0x0fff) | 0x4000, random_int(0, 0x3fff) | 0x8000,
                 random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff));
             $insert = $db->prepare(
-                'INSERT INTO transactions (id, entry_date, category, sub_category, description, amount, payment_method, created_by, updated_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO transactions (id, entry_date, category, sub_category, description, manual_details, raw_ocr_text, receipt_image, receipt_image_type, amount, payment_method, created_by, updated_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
-            $insert->execute([$id, $date, $category, $subCategory, $description, $amount, $paymentMethod, $user['id'], $user['id']]);
+            $insert->execute([
+                $id, $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType,
+                $amount, $paymentMethod, $user['id'], $user['id'],
+            ]);
         } else {
             $exists = $db->prepare('SELECT id FROM transactions WHERE id = ?');
             $exists->execute([$id]);
@@ -336,18 +387,27 @@ try {
             }
             $update = $db->prepare(
                 'UPDATE transactions
-                 SET entry_date = ?, category = ?, sub_category = ?, description = ?, amount = ?, payment_method = ?, updated_by = ?
+                 SET entry_date = ?, category = ?, sub_category = ?, description = ?, manual_details = ?, raw_ocr_text = COALESCE(?, raw_ocr_text),
+                     receipt_image = COALESCE(?, receipt_image), receipt_image_type = COALESCE(?, receipt_image_type),
+                     amount = ?, payment_method = ?, updated_by = ?
                  WHERE id = ?'
             );
-            $update->execute([$date, $category, $subCategory, $description, $amount, $paymentMethod, $user['id'], $id]);
+            $update->execute([
+                $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType,
+                $amount, $paymentMethod, $user['id'], $id,
+            ]);
         }
         $statement = $db->prepare(
-            'SELECT id, entry_date AS date, category, sub_category AS subCategory, description, amount, payment_method AS method
+            'SELECT id, entry_date AS date, category, sub_category AS subCategory, description,
+                    manual_details AS manualDetails, raw_ocr_text AS rawOcrText,
+                    receipt_image IS NOT NULL AS hasReceiptPhoto,
+                    amount, payment_method AS method
              FROM transactions WHERE id = ?'
         );
         $statement->execute([$id]);
         $transaction = $statement->fetch();
         $transaction['amount'] = (float) $transaction['amount'];
+        $transaction['hasReceiptPhoto'] = (bool) $transaction['hasReceiptPhoto'];
         respond(['transaction' => $transaction]);
     }
 
