@@ -1,4 +1,4 @@
-# TechPass on XAMPP
+# READ ME 
 
 ## Setup
 
