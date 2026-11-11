@@ -7,7 +7,8 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
 
-$isHttps = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+$isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
@@ -94,13 +95,26 @@ function csrfToken(): string
     return $_SESSION['csrf_token'];
 }
 
+function executeStatement(PDOStatement $statement, array $parameters, array $binaryParameters = []): void
+{
+    foreach ($parameters as $index => $value) {
+        $type = $value === null
+            ? PDO::PARAM_NULL
+            : (in_array($index, $binaryParameters, true)
+                ? PDO::PARAM_LOB
+                : (is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR));
+        $statement->bindValue($index + 1, $value, $type);
+    }
+    $statement->execute();
+}
+
 function appData(PDO $db, array $user): array
 {
-    $settings = $db->query('SELECT name, fiscal_year_start AS fiscalYear, currency FROM organization_settings WHERE id = 1')->fetch();
+    $settings = $db->query('SELECT name, fiscal_year_start AS "fiscalYear", currency FROM organization_settings WHERE id = 1')->fetch();
     $transactions = $db->query(
-        'SELECT id, entry_date AS date, category, sub_category AS subCategory, description,
-                manual_details AS manualDetails, raw_ocr_text AS rawOcrText,
-                receipt_image IS NOT NULL AS hasReceiptPhoto,
+        'SELECT id, entry_date AS "date", category, sub_category AS "subCategory", description,
+                manual_details AS "manualDetails", raw_ocr_text AS "rawOcrText",
+                CASE WHEN receipt_image IS NOT NULL THEN 1 ELSE 0 END AS "hasReceiptPhoto",
                 CAST(amount AS DECIMAL(14, 2)) AS amount, payment_method AS method
          FROM transactions ORDER BY entry_date DESC, created_at DESC'
     )->fetchAll();
@@ -248,23 +262,24 @@ try {
         requireMethod('POST');
         $body = requestBody();
         [$name, $username, $password] = validateCredentials($body, true);
-        $lockResult = (int) $db->query("SELECT GET_LOCK('techpass_initial_setup', 10)")->fetchColumn();
-        if ($lockResult !== 1) {
-            respond(['error' => 'Initial setup is busy. Please try again.'], 503);
-        }
+        $transactionalLock = acquireInitialSetupLock($db);
         $existingUsers = (int) $db->query('SELECT COUNT(*) FROM users')->fetchColumn();
         if ($existingUsers > 0) {
-            $db->query("SELECT RELEASE_LOCK('techpass_initial_setup')");
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            releaseInitialSetupLock($db, $transactionalLock);
             respond(['error' => 'Initial setup has already been completed. Sign in instead.'], 409);
         }
         try {
-            $db->beginTransaction();
-            $statement = $db->prepare(
-                "INSERT INTO users (name, username, password_hash, role, must_change_password)
-                 VALUES (?, ?, ?, 'admin', 0)"
-            );
+            if (!$transactionalLock) {
+                $db->beginTransaction();
+            }
+            $insertUserSql = "INSERT INTO users (name, username, password_hash, role, must_change_password)
+                              VALUES (?, ?, ?, 'admin', 0)";
+            $statement = $db->prepare(isPostgres($db) ? $insertUserSql . ' RETURNING id' : $insertUserSql);
             $statement->execute([$name, $username, password_hash($password, PASSWORD_DEFAULT)]);
-            $userId = (int) $db->lastInsertId();
+            $userId = (int) (isPostgres($db) ? $statement->fetchColumn() : $db->lastInsertId());
             $settings = $db->prepare(
                 "INSERT INTO organization_settings (id, name, fiscal_year_start, currency)
                  VALUES (1, 'Organization Ledger', 'January 1', 'PHP')"
@@ -275,10 +290,10 @@ try {
             if ($db->inTransaction()) {
                 $db->rollBack();
             }
-            $db->query("SELECT RELEASE_LOCK('techpass_initial_setup')");
             throw $error;
+        } finally {
+            releaseInitialSetupLock($db, $transactionalLock);
         }
-        $db->query("SELECT RELEASE_LOCK('techpass_initial_setup')");
         establishSession($db, $userId);
     }
 
@@ -340,6 +355,12 @@ try {
         if (!$receipt || $receipt['receipt_image'] === null) {
             respond(['error' => 'No receipt photo is stored for this entry.'], 404);
         }
+        if (is_resource($receipt['receipt_image'])) {
+            $receipt['receipt_image'] = stream_get_contents($receipt['receipt_image']);
+        }
+        if (!is_string($receipt['receipt_image'])) {
+            throw new RuntimeException('The stored receipt image could not be read.');
+        }
         respond([
             'image' => 'data:' . $receipt['receipt_image_type'] . ';base64,' . base64_encode($receipt['receipt_image']),
         ]);
@@ -375,10 +396,10 @@ try {
                 'INSERT INTO transactions (id, entry_date, category, sub_category, description, manual_details, raw_ocr_text, receipt_image, receipt_image_type, amount, payment_method, created_by, updated_by)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
-            $insert->execute([
+            executeStatement($insert, [
                 $id, $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType,
                 $amount, $paymentMethod, $user['id'], $user['id'],
-            ]);
+            ], [7]);
         } else {
             $exists = $db->prepare('SELECT id FROM transactions WHERE id = ?');
             $exists->execute([$id]);
@@ -389,18 +410,18 @@ try {
                 'UPDATE transactions
                  SET entry_date = ?, category = ?, sub_category = ?, description = ?, manual_details = ?, raw_ocr_text = COALESCE(?, raw_ocr_text),
                      receipt_image = COALESCE(?, receipt_image), receipt_image_type = COALESCE(?, receipt_image_type),
-                     amount = ?, payment_method = ?, updated_by = ?
+                     amount = ?, payment_method = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
                  WHERE id = ?'
             );
-            $update->execute([
+            executeStatement($update, [
                 $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType,
                 $amount, $paymentMethod, $user['id'], $id,
-            ]);
+            ], [6]);
         }
         $statement = $db->prepare(
-            'SELECT id, entry_date AS date, category, sub_category AS subCategory, description,
-                    manual_details AS manualDetails, raw_ocr_text AS rawOcrText,
-                    receipt_image IS NOT NULL AS hasReceiptPhoto,
+            'SELECT id, entry_date AS "date", category, sub_category AS "subCategory", description,
+                    manual_details AS "manualDetails", raw_ocr_text AS "rawOcrText",
+                    CASE WHEN receipt_image IS NOT NULL THEN 1 ELSE 0 END AS "hasReceiptPhoto",
                     amount, payment_method AS method
              FROM transactions WHERE id = ?'
         );
@@ -438,9 +459,9 @@ try {
         if ($name === '' || strlen($name) > 160 || $fiscalYear === '' || strlen($fiscalYear) > 80) {
             respond(['error' => 'Organization name (160 characters) and fiscal year start (80 characters) are required.'], 422);
         }
-        $statement = $db->prepare('UPDATE organization_settings SET name = ?, fiscal_year_start = ? WHERE id = 1');
+        $statement = $db->prepare('UPDATE organization_settings SET name = ?, fiscal_year_start = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1');
         $statement->execute([$name, $fiscalYear]);
-        $settings = $db->query('SELECT name, fiscal_year_start AS fiscalYear, currency FROM organization_settings WHERE id = 1')->fetch();
+        $settings = $db->query('SELECT name, fiscal_year_start AS "fiscalYear", currency FROM organization_settings WHERE id = 1')->fetch();
         respond(['org' => $settings]);
     }
 
@@ -448,7 +469,7 @@ try {
         if ($method === 'GET') {
             requireRole($user, ['admin']);
             $accounts = $db->query(
-                'SELECT id, name, username, role, created_at AS createdAt
+                'SELECT id, name, username, role, created_at AS "createdAt"
                  FROM users WHERE is_active = 1 ORDER BY name, username'
             )->fetchAll();
             respond(['users' => $accounts]);
@@ -466,7 +487,7 @@ try {
             $statement = $db->prepare('INSERT INTO users (name, username, password_hash, role) VALUES (?, ?, ?, ?)');
             $statement->execute([$name, $username, password_hash($password, PASSWORD_DEFAULT), $role]);
         } catch (PDOException $error) {
-            if ($error->getCode() === '23000') {
+            if (in_array($error->getCode(), ['23000', '23505'], true)) {
                 respond(['error' => 'That username is already in use.'], 409);
             }
             throw $error;
@@ -477,7 +498,7 @@ try {
     respond(['error' => 'Unknown API action.'], 404);
 } catch (PDOException $error) {
     error_log('TechPass database error: ' . $error->getMessage());
-    respond(['error' => 'Database request failed. Check the XAMPP MySQL service and api/config.php settings.'], 500);
+    respond(['error' => 'Database request failed. Check the database service and connection settings.'], 500);
 } catch (Throwable $error) {
     error_log('TechPass API error: ' . $error->getMessage());
     respond(['error' => 'The server could not complete the request.'], 500);

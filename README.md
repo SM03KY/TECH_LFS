@@ -39,3 +39,11 @@ Authorization is checked by the PHP API as well as by the interface. Passwords a
 Organization settings, users, and transactions are stored in MySQL. Fund/project allocation is not required or stored. Existing browser-only data from earlier versions is not imported automatically; export any records you need to retain before switching to the database version.
 
 This configuration is intended for local XAMPP development. Before exposing the app beyond the local machine, use a dedicated MySQL account with a strong password, HTTPS, and suitable web-server access controls. Do not expose phpMyAdmin or development defaults to the public internet.
+
+## Render deployment (free web service and PostgreSQL)
+
+The repository includes a Render Blueprint and Docker setup for deploying the PHP app with a free web service and PostgreSQL database. The container initializes the PostgreSQL schema at startup, and Render provides the database connection settings to the app.
+
+In Render, create a Blueprint from this repository. The web service and database are configured for the Singapore region. Render free web services sleep after inactivity and have an ephemeral filesystem; Render's free PostgreSQL databases expire after 30 days. This is for testing only, not production financial records. Back up any data you want to keep before the database expires.
+
+After the deploy is live, open the service URL and use the one-time setup form to create the first Admin account. The application still supports MySQL locally through XAMPP; the PostgreSQL schema is in `api/techpass-postgres.sql`.

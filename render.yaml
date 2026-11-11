@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: techpass
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: TECHPASS_DB_DRIVER
+        value: pgsql
+      - key: TECHPASS_DB_HOST
+        fromDatabase:
+          name: techpass-db
+          property: host
+      - key: TECHPASS_DB_PORT
+        fromDatabase:
+          name: techpass-db
+          property: port
+      - key: TECHPASS_DB_NAME
+        fromDatabase:
+          name: techpass-db
+          property: database
+      - key: TECHPASS_DB_USER
+        fromDatabase:
+          name: techpass-db
+          property: user
+      - key: TECHPASS_DB_PASSWORD
+        fromDatabase:
+          name: techpass-db
+          property: password
+
+databases:
+  - name: techpass-db
+    databaseName: techpass
+    user: techpass
+    plan: free
+    region: singapore
+    postgresMajorVersion: "17"
+    ipAllowList: []

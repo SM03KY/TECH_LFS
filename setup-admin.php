@@ -18,10 +18,7 @@ function setupMessage(string $message): void
 
 try {
     $db = database();
-    $lockResult = (int) $db->query("SELECT GET_LOCK('techpass_initial_setup', 10)")->fetchColumn();
-    if ($lockResult !== 1) {
-        throw new RuntimeException('Could not lock initial setup. Please try again.');
-    }
+    $transactionalLock = acquireInitialSetupLock($db);
 
     try {
         $existingUsers = (int) $db->query('SELECT COUNT(*) FROM users')->fetchColumn();
@@ -29,7 +26,9 @@ try {
             throw new RuntimeException('An account already exists. This setup can only be run on an empty users table.');
         }
 
-        $db->beginTransaction();
+        if (!$transactionalLock) {
+            $db->beginTransaction();
+        }
         $statement = $db->prepare(
             "INSERT INTO users (name, username, password_hash, role, must_change_password)
              VALUES ('Administrator', ?, ?, 'admin', 1)"
@@ -38,11 +37,14 @@ try {
             INITIAL_ADMIN_USERNAME,
             password_hash(INITIAL_ADMIN_PASSWORD, PASSWORD_DEFAULT),
         ]);
-        $settings = $db->prepare(
-            "INSERT INTO organization_settings (id, name, fiscal_year_start, currency)
-             VALUES (1, 'Organization Ledger', 'January 1', 'PHP')
-             ON DUPLICATE KEY UPDATE id = 1"
-        );
+        $settingsSql = isPostgres($db)
+            ? "INSERT INTO organization_settings (id, name, fiscal_year_start, currency)
+               VALUES (1, 'Organization Ledger', 'January 1', 'PHP')
+               ON CONFLICT (id) DO NOTHING"
+            : "INSERT INTO organization_settings (id, name, fiscal_year_start, currency)
+               VALUES (1, 'Organization Ledger', 'January 1', 'PHP')
+               ON DUPLICATE KEY UPDATE id = 1";
+        $settings = $db->prepare($settingsSql);
         $settings->execute();
         $db->commit();
     } catch (Throwable $error) {
@@ -51,7 +53,7 @@ try {
         }
         throw $error;
     } finally {
-        $db->query("SELECT RELEASE_LOCK('techpass_initial_setup')");
+        releaseInitialSetupLock($db, $transactionalLock);
     }
 
     setupMessage('Administrator account created.');
