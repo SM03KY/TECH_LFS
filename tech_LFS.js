@@ -23,6 +23,7 @@
         let activeOcrImage = null;
         let ocrCropStart = null;
         let ocrCropDraft = null;
+        let ocrLineItems = [];
         let pendingOcrAttachment = null;
 
         const currencySymbols = { PHP: "₱" };
@@ -373,7 +374,9 @@
                 manualDetails: document.getElementById('entryManualDetails').value.trim(),
                 amount: parseFloat(document.getElementById('entryAmount').value) || 0,
                 method: document.getElementById('entryMethod').value,
-                rawOcrText: pendingOcrAttachment?.rawOcrText || existingTransaction?.rawOcrText || ''
+                rawOcrText: pendingOcrAttachment?.rawOcrText || existingTransaction?.rawOcrText || '',
+                correctedOcrText: pendingOcrAttachment?.correctedOcrText || existingTransaction?.correctedOcrText || '',
+                lineItems: pendingOcrAttachment?.lineItems || existingTransaction?.lineItems || []
             };
             if (pendingOcrAttachment?.receiptImage) entry.receiptImage = pendingOcrAttachment.receiptImage;
 
@@ -449,7 +452,9 @@
                     t.subCategory.toLowerCase().includes(search) ||
                     t.category.toLowerCase().includes(search) ||
                     (t.manualDetails || '').toLowerCase().includes(search) ||
-                    (t.rawOcrText || '').toLowerCase().includes(search);
+                    (t.rawOcrText || '').toLowerCase().includes(search) ||
+                    (t.correctedOcrText || '').toLowerCase().includes(search) ||
+                    (t.lineItems || []).some(item => String(item.description || '').toLowerCase().includes(search));
             });
 
             if(filtered.length === 0) {
@@ -494,11 +499,11 @@
                 const manualDetailsCell = document.createElement('td');
                 manualDetailsCell.className = 'py-3 px-4 max-w-xs';
                 const manualDetailsPreview = (tx.manualDetails || '').replace(/\s+/g, ' ').trim();
-                if (manualDetailsPreview) {
+                if (manualDetailsPreview || (tx.lineItems || []).length) {
                     const preview = document.createElement('div');
                     preview.className = 'max-w-[220px] truncate text-xs text-slate-400';
-                    preview.textContent = manualDetailsPreview;
-                    preview.title = manualDetailsPreview;
+                    preview.textContent = manualDetailsPreview || `${tx.lineItems.length} itemized item${tx.lineItems.length === 1 ? '' : 's'}`;
+                    preview.title = preview.textContent;
                     manualDetailsCell.appendChild(preview);
                     const detailsButton = document.createElement('button');
                     detailsButton.className = 'mt-1 text-xs text-blue-400 hover:text-blue-300';
@@ -513,15 +518,15 @@
                 const ocrCell = document.createElement('td');
                 ocrCell.className = 'py-3 px-4 max-w-xs';
                 const rawTextPreview = (tx.rawOcrText || '').replace(/\s+/g, ' ').trim();
-                if (rawTextPreview) {
+                if (rawTextPreview || tx.correctedOcrText || tx.hasReceiptPhoto) {
                     const preview = document.createElement('div');
                     preview.className = 'max-w-[220px] truncate text-xs text-slate-400';
-                    preview.textContent = rawTextPreview;
-                    preview.title = rawTextPreview;
+                    preview.textContent = rawTextPreview || (tx.correctedOcrText ? tx.correctedOcrText.replace(/\s+/g, ' ').trim() : 'Receipt saved');
+                    preview.title = preview.textContent;
                     ocrCell.appendChild(preview);
                     const detailsButton = document.createElement('button');
                     detailsButton.className = 'mt-1 text-xs text-blue-400 hover:text-blue-300';
-                    detailsButton.textContent = tx.hasReceiptPhoto ? 'View text & photo' : 'View text';
+                    detailsButton.textContent = tx.hasReceiptPhoto ? 'View receipt details & photo' : 'View receipt text';
                     detailsButton.addEventListener('click', () => openReceiptDetails(tx));
                     ocrCell.appendChild(detailsButton);
                 } else {
@@ -555,10 +560,15 @@
             const dialog = document.getElementById('receiptDialog');
             const text = document.getElementById('receiptDialogText');
             const manualDetails = document.getElementById('receiptDialogManualDetails');
+            const correctedText = document.getElementById('receiptDialogCorrectedText');
+            const correctedTextSection = document.getElementById('receiptDialogCorrectedTextSection');
             const image = document.getElementById('receiptDialogImage');
             const noImageMessage = document.getElementById('receiptDialogNoImage');
             text.textContent = transaction.rawOcrText || 'No OCR text was saved for this entry.';
             manualDetails.textContent = transaction.manualDetails || 'No manual details were entered for this entry.';
+            correctedText.textContent = transaction.correctedOcrText || '';
+            correctedTextSection.classList.toggle('hidden', !transaction.correctedOcrText);
+            renderReceiptDialogLineItems(transaction.lineItems || []);
             image.removeAttribute('src');
             image.classList.add('hidden');
             noImageMessage.classList.toggle('hidden', Boolean(transaction.hasReceiptPhoto));
@@ -572,6 +582,25 @@
             } catch (error) {
                 notifyUser(error.message);
             }
+        }
+
+        function renderReceiptDialogLineItems(items) {
+            const section = document.getElementById('receiptDialogLineItemsSection');
+            const body = document.getElementById('receiptDialogLineItems');
+            body.innerHTML = '';
+            section.classList.toggle('hidden', items.length === 0);
+            items.forEach(item => {
+                const row = document.createElement('tr');
+                [item.description, item.quantity, item.unit || '—', item.unitPrice, item.lineTotal].forEach((value, index) => {
+                    const cell = document.createElement('td');
+                    cell.className = `p-2 ${index > 0 && index !== 2 ? 'text-right font-mono' : ''}`;
+                    cell.textContent = index === 3 || index === 4
+                        ? (value === null || value === '' ? '—' : Number(value).toFixed(2))
+                        : String(value ?? '—');
+                    row.appendChild(cell);
+                });
+                body.appendChild(row);
+            });
         }
 
         // FINANCIAL STATEMENTS CALCULATOR
@@ -761,7 +790,67 @@
             document.getElementById('ocrAmount').value = '';
             document.getElementById('ocrSubCat').value = 'Program Expenses';
             document.getElementById('ocrRawText').value = '';
+            document.getElementById('ocrCorrectedText').value = '';
+            document.getElementById('ocrLineItemsList').innerHTML = '';
+            ocrLineItems = [];
             document.getElementById('ocrPostBtn').disabled = true;
+        }
+
+        function addOcrLineItem(item = {}) {
+            const row = document.createElement('div');
+            row.className = 'grid grid-cols-2 md:grid-cols-12 gap-2 items-end rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+            const addInput = (labelText, name, value, type, step, span) => {
+                const wrapper = document.createElement('label');
+                wrapper.className = `text-[10px] font-semibold text-slate-500 ${span}`;
+                wrapper.textContent = labelText;
+                const input = document.createElement('input');
+                input.type = type;
+                input.dataset.lineItemField = name;
+                input.value = value ?? '';
+                input.className = 'mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200';
+                if (step) input.step = step;
+                if (type === 'number') input.min = name === 'quantity' ? '0.001' : '0';
+                wrapper.appendChild(input);
+                row.appendChild(wrapper);
+            };
+            addInput('Description', 'description', item.description, 'text', '', 'col-span-2 md:col-span-4');
+            addInput('Quantity', 'quantity', item.quantity, 'number', '0.001', 'col-span-1 md:col-span-2');
+            addInput('Unit', 'unit', item.unit, 'text', '', 'col-span-1 md:col-span-2');
+            addInput('Unit price', 'unitPrice', item.unitPrice, 'number', '0.01', 'col-span-1 md:col-span-2');
+            addInput('Line total', 'lineTotal', item.lineTotal, 'number', '0.01', 'col-span-1 md:col-span-2');
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'col-span-2 justify-self-end rounded px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-950/50';
+            removeButton.textContent = 'Remove item';
+            removeButton.addEventListener('click', () => {
+                row.remove();
+                collectOcrLineItems();
+            });
+            row.appendChild(removeButton);
+            document.getElementById('ocrLineItemsList').appendChild(row);
+            collectOcrLineItems();
+        }
+
+        function collectOcrLineItems() {
+            ocrLineItems = [...document.querySelectorAll('#ocrLineItemsList > div')].map(row => {
+                const read = name => row.querySelector(`[data-line-item-field="${name}"]`).value.trim();
+                const numberOrNull = value => value === '' ? null : Number(value);
+                return {
+                    description: read('description'),
+                    quantity: numberOrNull(read('quantity')),
+                    unit: read('unit'),
+                    unitPrice: numberOrNull(read('unitPrice')),
+                    lineTotal: numberOrNull(read('lineTotal'))
+                };
+            });
+            return ocrLineItems;
+        }
+
+        function setOcrLineItems(items) {
+            const container = document.getElementById('ocrLineItemsList');
+            container.innerHTML = '';
+            ocrLineItems = [];
+            items.forEach(item => addOcrLineItem(item));
         }
 
         function setOcrStatus(message, color) {
@@ -1151,6 +1240,48 @@
             });
         }
 
+        function prepareImageForAi(dataUrl, crop = null) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => {
+                    const source = crop || { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight };
+                    const scale = Math.min(2, 1800 / Math.max(source.width, source.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(source.width * scale));
+                    canvas.height = Math.max(1, Math.round(source.height * scale));
+                    const context = canvas.getContext('2d');
+                    if (!context) {
+                        reject(new Error('Could not prepare the receipt photo for Gemini.'));
+                        return;
+                    }
+
+                    context.fillStyle = '#ffffff';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.imageSmoothingQuality = 'high';
+                    context.drawImage(
+                        image,
+                        source.x, source.y, source.width, source.height,
+                        0, 0, canvas.width, canvas.height
+                    );
+
+                    const maxBytes = 3 * 1024 * 1024;
+                    let quality = 0.88;
+                    let preparedImage = canvas.toDataURL('image/jpeg', quality);
+                    while (Math.ceil((preparedImage.length - preparedImage.indexOf(',') - 1) * 0.75) > maxBytes && quality > 0.5) {
+                        quality = Math.max(0.5, quality - 0.08);
+                        preparedImage = canvas.toDataURL('image/jpeg', quality);
+                    }
+                    if (Math.ceil((preparedImage.length - preparedImage.indexOf(',') - 1) * 0.75) > maxBytes) {
+                        reject(new Error('This receipt photo is too large to send for AI analysis. Select a smaller area or image.'));
+                        return;
+                    }
+                    resolve(preparedImage);
+                };
+                image.onerror = () => reject(new Error('Could not prepare the receipt photo for Gemini.'));
+                image.src = dataUrl;
+            });
+        }
+
         async function runOcrScan() {
             const imageToScan = activeOcrImage;
             if (!imageToScan || document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode')) return;
@@ -1159,63 +1290,84 @@
             const badge = document.getElementById('ocrStatusBadge');
             const overlays = document.getElementById('ocrBoxOverlays');
 
-            if (!window.Tesseract) {
-                setOcrStatus('OCR engine unavailable', 'rose');
-                notifyUser('The OCR engine could not be loaded. Check your internet connection and reload the page.');
-                return;
-            }
-
             scanLaser.classList.remove('hidden');
-            setOcrStatus('Enhancing photo for scan...', 'amber');
+            setOcrStatus('Reading photo locally, then analyzing with Gemini...', 'amber');
             badge.classList.add('animate-pulse');
             document.getElementById('ocrScanBtn').disabled = true;
             document.getElementById('ocrPostBtn').disabled = true;
             overlays.innerHTML = '';
             document.getElementById('ocrCropOverlay').classList.add('hidden');
+            let localOcrError = '';
 
             try {
-                const preparedImage = await prepareImageForOcr(imageToScan.imgSrc, imageToScan.crop);
-                if (activeOcrImage !== imageToScan) return;
-                const recognition = await window.Tesseract.recognize(preparedImage.src, 'eng', {
+                if (window.Tesseract) {
+                    try {
+                        const preparedImage = await prepareImageForOcr(imageToScan.imgSrc, imageToScan.crop);
+                        if (activeOcrImage !== imageToScan) return;
+                        const recognition = await window.Tesseract.recognize(preparedImage.src, 'eng', {
                         logger: progress => {
                             if (progress.status === 'recognizing text' && Number.isFinite(progress.progress)) {
                                 setOcrStatus(`Recognizing receipt text... ${Math.round(progress.progress * 100)}%`, 'amber');
                                 badge.classList.add('animate-pulse');
                             }
                         }
-                    });
-                if (activeOcrImage !== imageToScan) return;
-                const recognizedText = recognition.data.text;
-                const result = parseReceiptText(recognizedText);
-
-                scanLaser.classList.add('hidden');
-                renderOcrWordBoxes(recognition.data.words || [], preparedImage);
-                document.getElementById('ocrVendor').value = result.vendor;
-                document.getElementById('ocrDate').value = result.date;
-                document.getElementById('ocrAmount').value = result.amount;
-                document.getElementById('ocrSubCat').value = result.subCategory;
-                document.getElementById('ocrRawText').value = result.rawText;
-
-                if (!result.rawText) {
-                    setOcrStatus('No text found; try a clearer photo', 'rose');
+                        });
+                        if (activeOcrImage !== imageToScan) return;
+                        const result = parseReceiptText(recognition.data.text);
+                        renderOcrWordBoxes(recognition.data.words || [], preparedImage);
+                        document.getElementById('ocrVendor').value = result.vendor;
+                        document.getElementById('ocrDate').value = result.date;
+                        document.getElementById('ocrAmount').value = result.amount;
+                        document.getElementById('ocrSubCat').value = result.subCategory;
+                        document.getElementById('ocrRawText').value = result.rawText;
+                        if (result.rawText) document.getElementById('ocrPostBtn').disabled = false;
+                    } catch (error) {
+                        localOcrError = error.message;
+                    }
                 } else {
-                    const words = recognition.data.words || [];
-                    const wordConfidences = words.map(word => word.confidence).filter(Number.isFinite);
-                    const confidence = wordConfidences.length
-                        ? wordConfidences.reduce((total, value) => total + value, 0) / wordConfidences.length
-                        : 0;
-                    const needsReview = confidence < 65 || !result.vendor || !result.date || result.amount === '';
-                    setOcrStatus(
-                        needsReview ? 'Check extracted fields — crop or retake if inaccurate' : 'Text extracted — review fields before posting',
-                        needsReview ? 'amber' : 'emerald'
-                    );
-                    document.getElementById('ocrPostBtn').disabled = false;
+                    localOcrError = 'Local OCR engine unavailable.';
                 }
+
+                if (activeOcrImage !== imageToScan) return;
+                setOcrStatus('Sending selected photo area to Gemini for understanding...', 'amber');
+                const aiImage = await prepareImageForAi(imageToScan.imgSrc, imageToScan.crop);
+                if (activeOcrImage !== imageToScan) return;
+                const response = await apiRequest('receipt_ai', {
+                    method: 'POST',
+                    body: { image: aiImage }
+                });
+                if (activeOcrImage !== imageToScan) return;
+                const analysis = response.analysis;
+                if (analysis.vendor) document.getElementById('ocrVendor').value = analysis.vendor;
+                if (analysis.date) document.getElementById('ocrDate').value = analysis.date;
+                if (analysis.amount !== '' && Number(analysis.amount) > 0) {
+                    document.getElementById('ocrAmount').value = analysis.amount;
+                }
+                if ([...document.getElementById('ocrSubCat').options].some(option => option.value === analysis.subCategory)) {
+                    document.getElementById('ocrSubCat').value = analysis.subCategory;
+                }
+                document.getElementById('ocrCorrectedText').value = analysis.correctedText || '';
+                setOcrLineItems(Array.isArray(analysis.lineItems) ? analysis.lineItems : []);
+                const hasRequiredFields = document.getElementById('ocrVendor').value.trim()
+                    && document.getElementById('ocrDate').value
+                    && Number(document.getElementById('ocrAmount').value) > 0;
+                document.getElementById('ocrPostBtn').disabled = !hasRequiredFields;
+                setOcrStatus(
+                    hasRequiredFields ? 'AI suggestions ready — review all fields and items' : 'AI analysis ready — complete missing fields and review items',
+                    'amber'
+                );
             } catch (error) {
                 if (activeOcrImage !== imageToScan) return;
                 scanLaser.classList.add('hidden');
-                setOcrStatus('Could not scan image', 'rose');
-                notifyUser(`Could not scan the receipt: ${error.message}`);
+                const hasLocalText = document.getElementById('ocrRawText').value.trim();
+                if (hasLocalText) {
+                    document.getElementById('ocrPostBtn').disabled = false;
+                    setOcrStatus('Gemini unavailable — local OCR ready; review carefully', 'amber');
+                    notifyUser(`${error.message}${localOcrError ? ` Local OCR note: ${localOcrError}` : ''}`);
+                } else {
+                    setOcrStatus('Could not analyze receipt — try local OCR or a clearer photo', 'rose');
+                    notifyUser(`${error.message}${localOcrError ? ` ${localOcrError}` : ''}`);
+                }
             } finally {
                 badge.classList.remove('animate-pulse');
                 document.getElementById('scanLaser').classList.add('hidden');
@@ -1236,6 +1388,19 @@
                 notifyUser('Review the extracted fields and enter a vendor, date, and valid amount before posting.');
                 return;
             }
+            const enteredItems = collectOcrLineItems();
+            const invalidItem = enteredItems.some(item => {
+                const hasValues = item.description || item.quantity !== null || item.unit || item.unitPrice !== null || item.lineTotal !== null;
+                return hasValues && (!item.description || item.description.length > 200 || item.unit.length > 32
+                    || (item.quantity !== null && (!Number.isFinite(item.quantity) || item.quantity <= 0))
+                    || (item.unitPrice !== null && (!Number.isFinite(item.unitPrice) || item.unitPrice < 0))
+                    || (item.lineTotal !== null && (!Number.isFinite(item.lineTotal) || item.lineTotal < 0)));
+            });
+            if (invalidItem) {
+                notifyUser('Complete each item description and check its quantity and prices before posting.');
+                return;
+            }
+            const lineItems = enteredItems.filter(item => item.description);
 
             const postButton = document.getElementById('ocrPostBtn');
             postButton.disabled = true;
@@ -1244,6 +1409,8 @@
                 if (activeOcrImage !== imageToPost) return;
                 pendingOcrAttachment = {
                     rawOcrText: document.getElementById('ocrRawText').value,
+                    correctedOcrText: document.getElementById('ocrCorrectedText').value,
+                    lineItems,
                     receiptImage
                 };
             } catch (error) {

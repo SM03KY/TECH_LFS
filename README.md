@@ -16,15 +16,19 @@ ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0;
 ALTER TABLE transactions
     ADD COLUMN manual_details TEXT NULL,
     ADD COLUMN raw_ocr_text TEXT NULL,
+    ADD COLUMN corrected_ocr_text TEXT NULL,
+    ADD COLUMN line_items_json JSON NULL,
     ADD COLUMN receipt_image MEDIUMBLOB NULL,
     ADD COLUMN receipt_image_type VARCHAR(32) NULL;
 ```
 
 Skip any `ADD COLUMN` for a column that already exists. Manual item/purpose details and OCR text are stored with each transaction; uploaded receipt photos are resized and limited to 3 MB before saving.
 
-The receipt scanner accepts a camera photo or image upload, enhances contrast for OCR, and lets you retake or clear the selected photo. If the receipt is small in the frame, use **Select receipt area** and drag around the printed text before scanning; OCR word highlights are mapped back to the original photo. Cropping cannot restore out-of-focus text, so retake blurry photos. For the best scan, keep the receipt flat, hold the camera steady, tap to focus, and avoid glare. Review flagged or inaccurate fields before posting.
+The receipt scanner first reads text locally, then sends the selected image area to Gemini for receipt understanding, spelling cleanup, and draft itemization. Configure `GEMINI_API_KEY` in the server environment (on Render, add it under the web service's **Environment** settings; locally, make it available to Apache/PHP and restart Apache). Never put the key in browser code or commit it. The user interface tells the operator that the selected photo is sent to Google; review and correct all AI suggestions before posting. Gemini quota and pricing depend on the provider's current account terms.
 
-Use the site through Apache (`http://localhost/Tech/`), not by opening `index.html` from the filesystem. PHP must be enabled and `pdo_mysql` must be available.
+The scanner accepts a camera photo or image upload, and lets you retake or clear the selected photo. If the receipt is small in the frame, use **Select receipt area** and drag around the printed text before analysis; local OCR word highlights are mapped back to the original photo. Itemized descriptions, quantities, units, prices, corrected text, and original local OCR text are saved with the ledger transaction. Cropping cannot restore out-of-focus text, so retake blurry photos. For the best scan, keep the receipt flat, hold the camera steady, tap to focus, and avoid glare. Review all values before posting.
+
+Use the site through Apache (`http://localhost/Tech/`), not by opening `index.html` from the filesystem. PHP must be enabled, `pdo_mysql` must be available, and PHP cURL must be enabled for Gemini analysis.
 
 ## Roles
 
@@ -46,6 +50,6 @@ This configuration is intended for local XAMPP development. Before exposing the 
 
 The repository includes a Render Blueprint and Docker setup for deploying the PHP app with a free web service and PostgreSQL database. The container initializes the PostgreSQL schema at startup, and Render provides the database connection settings to the app.
 
-In Render, create a Blueprint from this repository. The web service and database are configured for the Singapore region. Render free web services sleep after inactivity and have an ephemeral filesystem; Render's free PostgreSQL databases expire after 30 days. This is for testing only, not production financial records. Back up any data you want to keep before the database expires.
+In Render, create a Blueprint from this repository. The web service and database are configured for the Singapore region. Render free web services sleep after inactivity and have an ephemeral filesystem; Render's free PostgreSQL databases expire after 30 days. This is for testing only, not production financial records. Back up any data you want to keep before the database expires. Add `GEMINI_API_KEY` as a secret environment variable in the Render web service settings to enable cloud receipt analysis; do not commit it to `render.yaml`.
 
 After the deploy is live, open the service URL and use the one-time setup form to create the first Admin account. The application still supports MySQL locally through XAMPP; the PostgreSQL schema is in `api/techpass-postgres.sql`.

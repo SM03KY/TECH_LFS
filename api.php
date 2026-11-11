@@ -114,6 +114,7 @@ function appData(PDO $db, array $user): array
     $transactions = $db->query(
         'SELECT id, entry_date AS "date", category, sub_category AS "subCategory", description,
                 manual_details AS "manualDetails", raw_ocr_text AS "rawOcrText",
+                corrected_ocr_text AS "correctedOcrText", line_items_json AS "lineItems",
                 CASE WHEN receipt_image IS NOT NULL THEN 1 ELSE 0 END AS "hasReceiptPhoto",
                 CAST(amount AS DECIMAL(14, 2)) AS amount, payment_method AS method
          FROM transactions ORDER BY entry_date DESC, created_at DESC'
@@ -122,6 +123,9 @@ function appData(PDO $db, array $user): array
     foreach ($transactions as &$transaction) {
         $transaction['amount'] = (float) $transaction['amount'];
         $transaction['hasReceiptPhoto'] = (bool) $transaction['hasReceiptPhoto'];
+        $transaction['lineItems'] = is_string($transaction['lineItems'])
+            ? json_decode($transaction['lineItems'], true, 512, JSON_THROW_ON_ERROR)
+            : ($transaction['lineItems'] ?? []);
     }
     unset($transaction);
 
@@ -194,6 +198,8 @@ function validateTransaction(array $input): array
     $amount = filter_var($input['amount'] ?? null, FILTER_VALIDATE_FLOAT);
     $manualDetails = $input['manualDetails'] ?? '';
     $rawOcrText = $input['rawOcrText'] ?? '';
+    $correctedOcrText = $input['correctedOcrText'] ?? '';
+    $lineItems = $input['lineItems'] ?? [];
     $receiptImage = $input['receiptImage'] ?? '';
     $receiptImageBytes = null;
     $receiptImageType = null;
@@ -223,6 +229,49 @@ function validateTransaction(array $input): array
     if (!is_string($rawOcrText) || strlen($rawOcrText) > 20000) {
         respond(['error' => 'Receipt text must be 20,000 bytes or fewer.'], 422);
     }
+    if (!is_string($correctedOcrText) || strlen($correctedOcrText) > 20000) {
+        respond(['error' => 'Corrected receipt text must be 20,000 bytes or fewer.'], 422);
+    }
+    if (!is_array($lineItems) || !array_is_list($lineItems) || count($lineItems) > 50) {
+        respond(['error' => 'Receipt items must be a list of no more than 50 items.'], 422);
+    }
+    $normalizedItems = [];
+    foreach ($lineItems as $item) {
+        if (!is_array($item)) {
+            respond(['error' => 'Each receipt item must be an object.'], 422);
+        }
+        $itemDescription = $item['description'] ?? null;
+        $unit = $item['unit'] ?? '';
+        $quantityInput = $item['quantity'] ?? null;
+        $unitPriceInput = $item['unitPrice'] ?? null;
+        $lineTotalInput = $item['lineTotal'] ?? null;
+        if (!is_string($itemDescription) || !is_string($unit)
+            || ($quantityInput !== null && $quantityInput !== '' && !is_numeric($quantityInput))
+            || ($unitPriceInput !== null && $unitPriceInput !== '' && !is_numeric($unitPriceInput))
+            || ($lineTotalInput !== null && $lineTotalInput !== '' && !is_numeric($lineTotalInput))) {
+            respond(['error' => 'Receipt item descriptions, units, quantities, and prices have invalid values.'], 422);
+        }
+        $itemDescription = trim($itemDescription);
+        $unit = trim($unit);
+        $quantity = $quantityInput === null || $quantityInput === '' ? null : (float) $quantityInput;
+        $unitPrice = $unitPriceInput === null || $unitPriceInput === '' ? null : (float) $unitPriceInput;
+        $lineTotal = $lineTotalInput === null || $lineTotalInput === '' ? null : (float) $lineTotalInput;
+        if ($itemDescription === '' || strlen($itemDescription) > 200
+            || strlen($unit) > 32
+            || ($quantity !== null && (!is_finite($quantity) || $quantity <= 0 || $quantity > 999999))
+            || ($unitPrice !== null && (!is_finite($unitPrice) || $unitPrice < 0 || $unitPrice > 999999999999.99))
+            || ($lineTotal !== null && (!is_finite($lineTotal) || $lineTotal < 0 || $lineTotal > 999999999999.99))) {
+            respond(['error' => 'Receipt items need a description, positive quantity, and valid prices.'], 422);
+        }
+        $normalizedItems[] = [
+            'description' => $itemDescription,
+            'quantity' => $quantity === null ? null : round((float) $quantity, 3),
+            'unit' => $unit,
+            'unitPrice' => $unitPrice === null ? null : round((float) $unitPrice, 2),
+            'lineTotal' => $lineTotal === null ? null : round((float) $lineTotal, 2),
+        ];
+    }
+    $lineItemsJson = json_encode($normalizedItems, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     if ($receiptImage !== '' && $receiptImage !== null) {
         if (!is_string($receiptImage) || !preg_match('/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+\/]*={0,2})$/', $receiptImage, $matches)) {
             respond(['error' => 'The receipt image must be a valid JPEG, PNG, or WebP image.'], 422);
@@ -240,7 +289,176 @@ function validateTransaction(array $input): array
 
     return [
         $id, $date, $category, $subCategory, $description, round((float) $amount, 2), $method, $manualDetails,
-        $rawOcrText === '' ? null : $rawOcrText, $receiptImageBytes, $receiptImageType,
+        $rawOcrText === '' ? null : $rawOcrText, $correctedOcrText === '' ? null : $correctedOcrText,
+        $lineItemsJson, $receiptImageBytes, $receiptImageType,
+    ];
+}
+
+function analyzeReceiptWithGemini(string $mimeType, string $imageBytes): array
+{
+    $apiKey = getenv('GEMINI_API_KEY');
+    if ($apiKey === false || trim($apiKey) === '') {
+        respond(['error' => 'Gemini is not configured on the server. Set GEMINI_API_KEY to enable AI receipt analysis.'], 503);
+    }
+    if (!function_exists('curl_init')) {
+        respond(['error' => 'The server is missing PHP cURL support required for Gemini.'], 503);
+    }
+
+    $itemSchema = [
+        'type' => 'OBJECT',
+        'properties' => [
+            'description' => ['type' => 'STRING'],
+            'quantity' => ['type' => 'NUMBER'],
+            'unit' => ['type' => 'STRING'],
+            'unitPrice' => ['type' => 'NUMBER'],
+            'lineTotal' => ['type' => 'NUMBER'],
+        ],
+        'required' => ['description', 'quantity', 'unit', 'unitPrice', 'lineTotal'],
+    ];
+    $request = [
+        'contents' => [[
+            'parts' => [
+                ['text' => 'Read this receipt image and return only the requested JSON. Transcribe all readable receipt text in correctedText, fixing obvious OCR spelling errors without changing merchant or product names beyond clear corrections. Extract the printed merchant, transaction date (YYYY-MM-DD), final amount paid, and each purchased line item with its printed description, quantity, unit, unit price, and line total. Do not treat tax, subtotal, change, or tendered cash as the final paid total. Do not invent missing or unreadable values: use an empty string for unknown merchant/date/text, 0 for an unknown amount or item numeric value, and an empty item list if no items are legible. Choose the best-fitting subCategory only from Event Expenses, Program Expenses, Research & Lab Supplies, Office & Admin Expense, or Travel & Transportation; use Program Expenses if the purpose is unclear. Preserve the receipt language and currency; do not translate item names. The result is a draft that a person will review.'],
+                ['inline_data' => [
+                    'mime_type' => $mimeType,
+                    'data' => base64_encode($imageBytes),
+                ]],
+            ],
+        ]],
+        'generationConfig' => [
+            'responseMimeType' => 'application/json',
+            'responseSchema' => [
+                'type' => 'OBJECT',
+                'properties' => [
+                    'merchantName' => ['type' => 'STRING'],
+                    'receiptDate' => ['type' => 'STRING'],
+                    'totalAmount' => ['type' => 'NUMBER'],
+                    'subCategory' => [
+                        'type' => 'STRING',
+                        'enum' => [
+                            'Event Expenses',
+                            'Program Expenses',
+                            'Research & Lab Supplies',
+                            'Office & Admin Expense',
+                            'Travel & Transportation',
+                        ],
+                    ],
+                    'correctedText' => ['type' => 'STRING'],
+                    'items' => ['type' => 'ARRAY', 'items' => $itemSchema],
+                ],
+                'required' => ['merchantName', 'receiptDate', 'totalAmount', 'subCategory', 'correctedText', 'items'],
+            ],
+        ],
+    ];
+    $encodedRequest = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $curl = curl_init('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    curl_setopt_array($curl, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $encodedRequest,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'x-goog-api-key: ' . trim($apiKey),
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+    ]);
+    $response = curl_exec($curl);
+    $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+    $curlFailed = $response === false;
+    curl_close($curl);
+    if ($curlFailed) {
+        error_log('TechPass Gemini request failed before receiving a response.');
+        respond(['error' => 'Gemini could not be reached. Check the server connection or use local OCR.'], 502);
+    }
+    if ($status < 200 || $status >= 300) {
+        error_log('TechPass Gemini request returned HTTP ' . $status . '.');
+        respond([
+            'error' => $status === 429
+                ? 'Gemini quota is temporarily unavailable. Try again later or use local OCR.'
+                : 'Gemini could not analyze this receipt. Check the server API configuration or use local OCR.',
+        ], $status === 429 ? 503 : 502);
+    }
+
+    $decoded = json_decode($response, true);
+    $text = $decoded['candidates'][0]['content']['parts'][0]['text'] ?? null;
+    $analysis = is_string($text) ? json_decode($text, true) : null;
+    if (!is_array($analysis) || !is_array($analysis['items'] ?? null) || !array_is_list($analysis['items'])
+        || !is_string($analysis['merchantName'] ?? null)
+        || !is_string($analysis['receiptDate'] ?? null)
+        || !is_numeric($analysis['totalAmount'] ?? null)
+        || !is_string($analysis['subCategory'] ?? null)
+        || !is_string($analysis['correctedText'] ?? null)) {
+        error_log('TechPass Gemini response did not contain the expected receipt data.');
+        respond(['error' => 'Gemini returned an unreadable receipt analysis. Try again or use local OCR.'], 502);
+    }
+
+    $merchant = trim((string) ($analysis['merchantName'] ?? ''));
+    $date = trim((string) ($analysis['receiptDate'] ?? ''));
+    $dateParts = explode('-', $date);
+    if (count($dateParts) !== 3 || !checkdate((int) ($dateParts[1] ?? 0), (int) ($dateParts[2] ?? 0), (int) ($dateParts[0] ?? 0))) {
+        $date = '';
+    }
+    $amount = is_numeric($analysis['totalAmount'] ?? null) ? (float) $analysis['totalAmount'] : 0;
+    if (!is_finite($amount) || $amount <= 0 || $amount > 999999999999.99) {
+        $amount = '';
+    } else {
+        $amount = round($amount, 2);
+    }
+    $allowedSubcategories = [
+        'Event Expenses',
+        'Program Expenses',
+        'Research & Lab Supplies',
+        'Office & Admin Expense',
+        'Travel & Transportation',
+    ];
+    $subCategory = (string) ($analysis['subCategory'] ?? '');
+    if (!in_array($subCategory, $allowedSubcategories, true)) {
+        $subCategory = '';
+    }
+    $correctedText = (string) ($analysis['correctedText'] ?? '');
+    if (strlen($merchant) > 160 || strlen($correctedText) > 20000 || count($analysis['items']) > 50) {
+        respond(['error' => 'Gemini returned receipt data that exceeds the supported limits. Try a tighter crop.'], 502);
+    }
+
+    $items = [];
+    foreach ($analysis['items'] as $item) {
+        if (!is_array($item) || !is_string($item['description'] ?? null) || !is_string($item['unit'] ?? null)) {
+            respond(['error' => 'Gemini returned an invalid itemized receipt. Try again or use local OCR.'], 502);
+        }
+        $description = trim((string) ($item['description'] ?? ''));
+        if ($description === '') {
+            continue;
+        }
+        $quantity = is_numeric($item['quantity'] ?? null) ? (float) $item['quantity'] : 0;
+        $unitPrice = is_numeric($item['unitPrice'] ?? null) ? (float) $item['unitPrice'] : 0;
+        $lineTotal = is_numeric($item['lineTotal'] ?? null) ? (float) $item['lineTotal'] : 0;
+        if (strlen($description) > 200 || ($quantity !== 0 && (!is_finite($quantity) || $quantity < 0 || $quantity > 999999))
+            || $unitPrice < 0 || $unitPrice > 999999999999.99
+            || $lineTotal < 0 || $lineTotal > 999999999999.99) {
+            respond(['error' => 'Gemini returned invalid item quantities or prices. Review the photo and try again.'], 502);
+        }
+        $unit = trim((string) ($item['unit'] ?? ''));
+        if (strlen($unit) > 32) {
+            respond(['error' => 'Gemini returned an invalid item unit. Review the photo and try again.'], 502);
+        }
+        $items[] = [
+            'description' => $description,
+            'quantity' => $quantity === 0 ? null : round($quantity, 3),
+            'unit' => $unit,
+            'unitPrice' => $unitPrice === 0 ? null : round($unitPrice, 2),
+            'lineTotal' => $lineTotal === 0 ? null : round($lineTotal, 2),
+        ];
+    }
+
+    return [
+        'vendor' => $merchant,
+        'date' => $date,
+        'amount' => $amount,
+        'subCategory' => $subCategory,
+        'correctedText' => $correctedText,
+        'lineItems' => $items,
     ];
 }
 
@@ -343,6 +561,33 @@ try {
         respond(appData($db, $updatedUser));
     }
 
+    if ($action === 'receipt_ai') {
+        requireMethod('POST');
+        requireRole($user, ['admin', 'treasurer']);
+        requireCsrf();
+        if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 5 * 1024 * 1024) {
+            respond(['error' => 'The image sent for AI analysis must be 3 MB or smaller.'], 413);
+        }
+        $body = requestBody();
+        $image = $body['image'] ?? '';
+        if (!is_string($image) || !preg_match('/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+\/]*={0,2})$/', $image, $matches)) {
+            respond(['error' => 'Choose a valid JPEG, PNG, or WebP receipt photo.'], 422);
+        }
+        $imageBytes = base64_decode($matches[2], true);
+        if ($imageBytes === false || strlen($imageBytes) > 3 * 1024 * 1024) {
+            respond(['error' => 'The image sent for AI analysis must be 3 MB or smaller.'], 413);
+        }
+        $imageInfo = @getimagesizefromstring($imageBytes);
+        if (!$imageInfo || $imageInfo['mime'] !== $matches[1]) {
+            respond(['error' => 'The receipt image data is invalid.'], 422);
+        }
+        if ($imageInfo[0] > 6000 || $imageInfo[1] > 6000 || $imageInfo[0] * $imageInfo[1] > 24000000) {
+            respond(['error' => 'The image dimensions are too large for receipt analysis. Crop or resize the photo.'], 422);
+        }
+        set_time_limit(75);
+        respond(['analysis' => analyzeReceiptWithGemini($matches[1], $imageBytes)]);
+    }
+
     if ($action === 'transaction_receipt') {
         requireMethod('GET');
         $id = (string) ($_GET['id'] ?? '');
@@ -386,20 +631,21 @@ try {
         if (!isset($body['transaction']) || !is_array($body['transaction'])) {
             respond(['error' => 'Transaction details are required.'], 422);
         }
-        [$id, $date, $category, $subCategory, $description, $amount, $paymentMethod, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType] = validateTransaction($body['transaction']);
+        [$id, $date, $category, $subCategory, $description, $amount, $paymentMethod, $manualDetails, $rawOcrText, $correctedOcrText, $lineItemsJson, $receiptImage, $receiptImageType] = validateTransaction($body['transaction']);
+        $lineItemsPlaceholder = isPostgres($db) ? 'CAST(? AS JSONB)' : '?';
         if ($id === '') {
             $id = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
                 random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff),
                 random_int(0, 0x0fff) | 0x4000, random_int(0, 0x3fff) | 0x8000,
                 random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff));
             $insert = $db->prepare(
-                'INSERT INTO transactions (id, entry_date, category, sub_category, description, manual_details, raw_ocr_text, receipt_image, receipt_image_type, amount, payment_method, created_by, updated_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO transactions (id, entry_date, category, sub_category, description, manual_details, raw_ocr_text, corrected_ocr_text, line_items_json, receipt_image, receipt_image_type, amount, payment_method, created_by, updated_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ' . $lineItemsPlaceholder . ', ?, ?, ?, ?, ?, ?)'
             );
             executeStatement($insert, [
-                $id, $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType,
+                $id, $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $correctedOcrText, $lineItemsJson, $receiptImage, $receiptImageType,
                 $amount, $paymentMethod, $user['id'], $user['id'],
-            ], [7]);
+            ], [9]);
         } else {
             $exists = $db->prepare('SELECT id FROM transactions WHERE id = ?');
             $exists->execute([$id]);
@@ -409,18 +655,21 @@ try {
             $update = $db->prepare(
                 'UPDATE transactions
                  SET entry_date = ?, category = ?, sub_category = ?, description = ?, manual_details = ?, raw_ocr_text = COALESCE(?, raw_ocr_text),
+                     corrected_ocr_text = COALESCE(?, corrected_ocr_text), line_items_json = ' . $lineItemsPlaceholder . ',
                      receipt_image = COALESCE(?, receipt_image), receipt_image_type = COALESCE(?, receipt_image_type),
                      amount = ?, payment_method = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
                  WHERE id = ?'
             );
             executeStatement($update, [
-                $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $receiptImage, $receiptImageType,
+                $date, $category, $subCategory, $description, $manualDetails, $rawOcrText, $correctedOcrText, $lineItemsJson,
+                $receiptImage, $receiptImageType,
                 $amount, $paymentMethod, $user['id'], $id,
-            ], [6]);
+            ], [8]);
         }
         $statement = $db->prepare(
             'SELECT id, entry_date AS "date", category, sub_category AS "subCategory", description,
                     manual_details AS "manualDetails", raw_ocr_text AS "rawOcrText",
+                    corrected_ocr_text AS "correctedOcrText", line_items_json AS "lineItems",
                     CASE WHEN receipt_image IS NOT NULL THEN 1 ELSE 0 END AS "hasReceiptPhoto",
                     amount, payment_method AS method
              FROM transactions WHERE id = ?'
@@ -429,6 +678,9 @@ try {
         $transaction = $statement->fetch();
         $transaction['amount'] = (float) $transaction['amount'];
         $transaction['hasReceiptPhoto'] = (bool) $transaction['hasReceiptPhoto'];
+        $transaction['lineItems'] = is_string($transaction['lineItems'])
+            ? json_decode($transaction['lineItems'], true, 512, JSON_THROW_ON_ERROR)
+            : ($transaction['lineItems'] ?? []);
         respond(['transaction' => $transaction]);
     }
 

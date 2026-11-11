@@ -12,7 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Tesseract.js OCR -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <link rel="stylesheet" href="tech_LFS.css?v=57e2fed">
+    <link rel="stylesheet" href="tech_LFS.css?v=receipt-ai-v2">
 </head>
 <body data-theme="dark" class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
 
@@ -328,7 +328,7 @@
                                 <th class="py-3 px-4">Subcategory</th>
                                 <th class="py-3 px-4">Description</th>
                                 <th class="py-3 px-4">Manual Details / Items</th>
-                                <th class="py-3 px-4">Raw Parsed Text</th>
+                                <th class="py-3 px-4">Original OCR Text</th>
                                 <th class="py-3 px-4 text-right">Amount</th>
                                 <th data-role="admin treasurer" class="py-3 px-4 text-center">Actions</th>
                             </tr>
@@ -351,8 +351,29 @@
                         <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Manual Details / Items</h3>
                         <pre id="receiptDialogManualDetails" class="whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300"></pre>
                     </div>
+                    <div id="receiptDialogLineItemsSection" class="hidden">
+                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Itemized Receipt</h3>
+                        <div class="overflow-x-auto rounded-lg border border-slate-800">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-950 text-slate-400">
+                                    <tr>
+                                        <th class="p-2">Item</th>
+                                        <th class="p-2 text-right">Qty</th>
+                                        <th class="p-2">Unit</th>
+                                        <th class="p-2 text-right">Unit price</th>
+                                        <th class="p-2 text-right">Line total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="receiptDialogLineItems" class="divide-y divide-slate-800"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="receiptDialogCorrectedTextSection" class="hidden">
+                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">AI-corrected Receipt Text</h3>
+                        <pre id="receiptDialogCorrectedText" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300"></pre>
+                    </div>
                     <div>
-                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Raw Parsed Text</h3>
+                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Original Local OCR Text</h3>
                         <pre id="receiptDialogText" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300"></pre>
                     </div>
                 </div>
@@ -365,7 +386,7 @@
                 <div class="max-w-2xl">
                     <span class="px-2.5 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full text-xs font-semibold uppercase tracking-wider">AI Photo-to-Text OCR Parser</span>
                     <h2 class="text-2xl font-bold text-white mt-2">Organizational Invoice & Receipt Scanner</h2>
-                    <p class="text-sm text-slate-300 mt-1">Take or upload a receipt photo, then review the extracted values before adding them to the ledger.</p>
+                    <p class="text-sm text-slate-300 mt-1">Analyze a receipt photo, review corrected text and itemized details, then add the verified values to the ledger.</p>
                 </div>
             </div>
 
@@ -380,7 +401,7 @@
                             </div>
                             <div>
                                 <p class="text-slate-200 font-medium text-sm">Take a photo of your receipt or choose an image</p>
-                                <p class="text-xs text-slate-400 mt-1">For sharper results, keep the receipt flat, hold steady, tap to focus, and avoid glare. Crop small receipts before scanning; retake out-of-focus photos because cropping cannot restore blurred text.</p>
+                                <p class="text-xs text-slate-400 mt-1">For sharper results, keep the receipt flat, hold steady, tap to focus, and avoid glare. Crop small receipts before analysis; retake out-of-focus photos because cropping cannot restore blurred text.</p>
                             </div>
                             <div class="flex flex-col sm:flex-row justify-center gap-2">
                                 <label class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-sm transition">
@@ -418,7 +439,7 @@
                             <button type="button" onclick="useFullOcrPhoto()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg text-xs font-semibold shadow">
                                 Use full photo
                             </button>
-                            <span id="ocrCropHint" class="w-full text-center text-xs text-slate-400">Drag around the receipt text to scan just that area.</span>
+                            <span id="ocrCropHint" class="w-full text-center text-xs text-slate-400">Drag around the receipt text to analyze just that area.</span>
                         </div>
                     </div>
                 </div>
@@ -464,15 +485,33 @@
                             </div>
 
                             <div>
-                                <label class="text-xs font-semibold text-slate-400 block mb-1">Raw Parsed Text Tokens</label>
-                                <textarea id="ocrRawText" rows="3" readonly class="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none" placeholder="OCR raw output text snippets..."></textarea>
+                                <label class="text-xs font-semibold text-slate-400 block mb-1">AI-corrected receipt text (editable)</label>
+                                <textarea id="ocrCorrectedText" rows="4" class="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 focus:outline-none" placeholder="Corrected receipt transcription..."></textarea>
+                            </div>
+
+                            <div>
+                                <div class="mb-1 flex items-center justify-between gap-2">
+                                    <label class="text-xs font-semibold text-slate-400">Purchased items (review and edit)</label>
+                                    <button type="button" onclick="addOcrLineItem()" class="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700">Add item</button>
+                                </div>
+                                <div id="ocrLineItemsList" class="space-y-2"></div>
+                                <p class="mt-1 text-[11px] text-slate-500">AI suggestions can be wrong. Check quantities and prices against the photo; only verified items are saved.</p>
+                            </div>
+
+                            <div>
+                                <label class="text-xs font-semibold text-slate-400 block mb-1">Original local OCR text</label>
+                                <textarea id="ocrRawText" rows="2" readonly class="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none" placeholder="Uncorrected local OCR output..."></textarea>
+                            </div>
+
+                            <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-200">
+                                Selecting <strong>Analyze with Gemini</strong> sends the selected receipt photo area to Google Gemini for interpretation. Avoid using it for receipts you do not want sent to that service. Review all suggestions before posting.
                             </div>
                         </div>
                     </div>
 
                     <div class="pt-4 border-t border-slate-800 flex gap-2">
                         <button onclick="runOcrScan()" id="ocrScanBtn" disabled class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-medium rounded-lg text-xs transition flex items-center justify-center gap-1.5">
-                            <i class="fa-solid fa-expand"></i> Scan Photo
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Analyze with Gemini
                         </button>
                         <button onclick="postOcrToLedger()" id="ocrPostBtn" disabled class="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium rounded-lg text-xs shadow-sm transition flex items-center justify-center gap-1.5">
                             <i class="fa-solid fa-bolt"></i> Post to Ledger
@@ -727,6 +766,6 @@
     </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
-    <script src="tech_LFS.js?v=57e2fed"></script>
+    <script src="tech_LFS.js?v=receipt-ai-v2"></script>
 </body>
 </html>

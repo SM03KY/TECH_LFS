@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     description VARCHAR(255) NOT NULL,
     manual_details TEXT NULL,
     raw_ocr_text TEXT NULL,
+    corrected_ocr_text TEXT NULL,
+    line_items_json JSON NULL,
     receipt_image MEDIUMBLOB NULL,
     receipt_image_type VARCHAR(32) NULL,
     amount DECIMAL(14, 2) NOT NULL,
