@@ -36,7 +36,7 @@ Authorization is checked by the PHP API as well as by the interface. Passwords a
 
 ## Data and deployment notes
 
-Organization settings, users, and transactions are stored in MySQL. Fund/project allocation is not required or stored. Existing browser-only data from earlier versions is not imported automatically; export any records you need to retain before switching to the database version.
+Organization settings, users, and transactions are stored in the configured database (MySQL for XAMPP or PostgreSQL for Render). Fund/project allocation is not required or stored. Existing browser-only data from earlier versions is not imported automatically; export any records you need to retain before switching to the database version.
 
 This configuration is intended for local XAMPP development. Before exposing the app beyond the local machine, use a dedicated MySQL account with a strong password, HTTPS, and suitable web-server access controls. Do not expose phpMyAdmin or development defaults to the public internet.
 
