@@ -21,6 +21,8 @@
         let incomeExpenseChartInstance = null;
         let categoryChartInstance = null;
         let activeOcrImage = null;
+        let ocrCropStart = null;
+        let ocrCropDraft = null;
         let pendingOcrAttachment = null;
 
         const currencySymbols = { PHP: "₱" };
@@ -783,10 +785,16 @@
 
         function clearOcrPhoto() {
             activeOcrImage = null;
+            ocrCropStart = null;
+            ocrCropDraft = null;
             pendingOcrAttachment = null;
             document.getElementById('ocrImgPreview').removeAttribute('src');
             document.getElementById('ocrPreviewContainer').classList.add('hidden');
             document.getElementById('ocrUploadPrompt').classList.remove('hidden');
+            document.getElementById('ocrCropControls').classList.add('hidden');
+            document.getElementById('ocrPreviewContainer').classList.remove('ocr-crop-mode');
+            document.getElementById('ocrCropOverlay').classList.add('hidden');
+            document.getElementById('ocrCropSelection').classList.add('hidden');
             document.getElementById('ocrCameraInput').value = '';
             document.getElementById('ocrFileInput').value = '';
             document.getElementById('ocrBoxOverlays').innerHTML = '';
@@ -819,6 +827,8 @@
                 document.getElementById('ocrUploadPrompt').classList.add('hidden');
                 document.getElementById('ocrPreviewContainer').classList.remove('hidden');
                 document.getElementById('ocrImgPreview').src = evt.target.result;
+                document.getElementById('ocrCropControls').classList.remove('hidden');
+                updateOcrCropControls();
                 clearOcrFields();
                 setOcrStatus('Image Ready for Scan', 'blue');
                 document.getElementById('ocrBoxOverlays').innerHTML = '';
@@ -835,15 +845,157 @@
             reader.readAsDataURL(file);
         }
 
-        function prepareImageForOcr(dataUrl) {
+        function toggleOcrCropMode() {
+            if (!activeOcrImage) return;
+            const preview = document.getElementById('ocrPreviewContainer');
+            preview.classList.toggle('ocr-crop-mode');
+            const cropMode = preview.classList.contains('ocr-crop-mode');
+            document.getElementById('ocrScanBtn').disabled = cropMode;
+            document.getElementById('ocrCropOverlay').classList.toggle('hidden', !cropMode && !activeOcrImage.crop);
+            if (cropMode) {
+                document.getElementById('ocrBoxOverlays').innerHTML = '';
+                clearOcrFields();
+            }
+            ocrCropStart = null;
+            ocrCropDraft = null;
+            renderOcrCropSelection(activeOcrImage.crop);
+            updateOcrCropControls();
+            if (cropMode) {
+                setOcrStatus('Drag around the printed receipt area', 'amber');
+            } else {
+                setOcrStatus(activeOcrImage.crop ? 'Receipt area selected — scan for clearer text' : 'Image Ready for Scan', 'blue');
+            }
+        }
+
+        function useFullOcrPhoto() {
+            if (!activeOcrImage) return;
+            activeOcrImage.crop = null;
+            ocrCropStart = null;
+            ocrCropDraft = null;
+            document.getElementById('ocrPreviewContainer').classList.remove('ocr-crop-mode');
+            document.getElementById('ocrCropOverlay').classList.add('hidden');
+            document.getElementById('ocrCropSelection').classList.add('hidden');
+            document.getElementById('ocrBoxOverlays').innerHTML = '';
+            clearOcrFields();
+            document.getElementById('ocrScanBtn').disabled = false;
+            setOcrStatus('Using full photo — scan and review the result', 'blue');
+            updateOcrCropControls();
+        }
+
+        function updateOcrCropControls() {
+            const cropMode = document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode');
+            const cropButton = document.getElementById('ocrCropModeBtn');
+            const hint = document.getElementById('ocrCropHint');
+            cropButton.innerHTML = cropMode
+                ? '<i class="fa-solid fa-crop-simple mr-1"></i> Drag around receipt'
+                : activeOcrImage?.crop
+                    ? '<i class="fa-solid fa-crop-simple mr-1"></i> Adjust receipt area'
+                    : '<i class="fa-solid fa-crop-simple mr-1"></i> Select receipt area';
+            hint.textContent = cropMode
+                ? 'Drag from one corner of the printed receipt to the opposite corner.'
+                : activeOcrImage?.crop
+                    ? 'Scanning only the selected receipt area. Select again to adjust.'
+                    : 'For small receipts, select the printed area to improve OCR accuracy.';
+        }
+
+        function ocrImagePoint(event) {
+            const image = document.getElementById('ocrImgPreview');
+            const bounds = image.getBoundingClientRect();
+            if (!bounds.width || !bounds.height
+                || event.clientX < bounds.left || event.clientX > bounds.right
+                || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+                return null;
+            }
+            return {
+                x: (event.clientX - bounds.left) * image.naturalWidth / bounds.width,
+                y: (event.clientY - bounds.top) * image.naturalHeight / bounds.height
+            };
+        }
+
+        function renderOcrCropSelection(rect) {
+            const image = document.getElementById('ocrImgPreview');
+            const overlay = document.getElementById('ocrCropOverlay');
+            const selection = document.getElementById('ocrCropSelection');
+            const bounds = image.getBoundingClientRect();
+            const overlayBounds = overlay.getBoundingClientRect();
+            if (!rect || !bounds.width || !bounds.height || !overlayBounds.width || !overlayBounds.height) {
+                selection.classList.add('hidden');
+                return;
+            }
+
+            const left = bounds.left - overlayBounds.left + rect.x * bounds.width / image.naturalWidth;
+            const top = bounds.top - overlayBounds.top + rect.y * bounds.height / image.naturalHeight;
+            selection.style.left = `${left}px`;
+            selection.style.top = `${top}px`;
+            selection.style.width = `${rect.width * bounds.width / image.naturalWidth}px`;
+            selection.style.height = `${rect.height * bounds.height / image.naturalHeight}px`;
+            selection.classList.remove('hidden');
+        }
+
+        function startOcrCrop(event) {
+            if (!activeOcrImage || !document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode')) return;
+            const point = ocrImagePoint(event);
+            if (!point) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            ocrCropStart = point;
+            ocrCropDraft = { x: point.x, y: point.y, width: 0, height: 0 };
+            document.getElementById('ocrCropOverlay').classList.remove('hidden');
+            renderOcrCropSelection(ocrCropDraft);
+        }
+
+        function moveOcrCrop(event) {
+            if (!ocrCropStart) return;
+            const point = ocrImagePoint(event);
+            if (!point) return;
+            ocrCropDraft = {
+                x: Math.min(ocrCropStart.x, point.x),
+                y: Math.min(ocrCropStart.y, point.y),
+                width: Math.abs(point.x - ocrCropStart.x),
+                height: Math.abs(point.y - ocrCropStart.y)
+            };
+            renderOcrCropSelection(ocrCropDraft);
+        }
+
+        function finishOcrCrop(event) {
+            if (!ocrCropStart || !activeOcrImage) return;
+            moveOcrCrop(event);
+            ocrCropStart = null;
+            if (!ocrCropDraft || ocrCropDraft.width < 40 || ocrCropDraft.height < 40) {
+                ocrCropDraft = null;
+                renderOcrCropSelection(activeOcrImage.crop);
+                setOcrStatus('Crop too small — drag around the receipt text', 'rose');
+                return;
+            }
+
+            activeOcrImage.crop = ocrCropDraft;
+            ocrCropDraft = null;
+            document.getElementById('ocrPreviewContainer').classList.remove('ocr-crop-mode');
+            document.getElementById('ocrCropOverlay').classList.remove('hidden');
+            clearOcrFields();
+            document.getElementById('ocrScanBtn').disabled = false;
+            renderOcrCropSelection(activeOcrImage.crop);
+            setOcrStatus('Receipt area selected — scan for clearer text', 'blue');
+            updateOcrCropControls();
+        }
+
+        function cancelOcrCrop(event) {
+            if (!ocrCropStart) return;
+            ocrCropStart = null;
+            ocrCropDraft = null;
+            renderOcrCropSelection(activeOcrImage?.crop);
+        }
+
+        function prepareImageForOcr(dataUrl, crop = null) {
             return new Promise((resolve, reject) => {
                 const image = new Image();
                 image.onload = () => {
-                    const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
-                    const scale = Math.min(2, 2400 / longestSide);
+                    const source = crop || { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight };
+                    const longestSide = Math.max(source.width, source.height);
+                    const scale = Math.min(2, 2800 / longestSide);
                     const canvas = document.createElement('canvas');
-                    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-                    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                    canvas.width = Math.max(1, Math.round(source.width * scale));
+                    canvas.height = Math.max(1, Math.round(source.height * scale));
                     const context = canvas.getContext('2d', { willReadFrequently: true });
                     if (!context) {
                         reject(new Error('Could not enhance the receipt image for scanning.'));
@@ -853,7 +1005,11 @@
                     context.fillStyle = '#ffffff';
                     context.fillRect(0, 0, canvas.width, canvas.height);
                     context.imageSmoothingQuality = 'high';
-                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    context.drawImage(
+                        image,
+                        source.x, source.y, source.width, source.height,
+                        0, 0, canvas.width, canvas.height
+                    );
 
                     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
                     const pixels = imageData.data;
@@ -865,14 +1021,19 @@
                         pixels[index + 2] = enhanced;
                     }
                     context.putImageData(imageData, 0, 0);
-                    resolve(canvas.toDataURL('image/png'));
+                    resolve({
+                        src: canvas.toDataURL('image/png'),
+                        scaleX: canvas.width / source.width,
+                        scaleY: canvas.height / source.height,
+                        crop: source
+                    });
                 };
                 image.onerror = () => reject(new Error('Could not enhance the receipt image for scanning.'));
                 image.src = dataUrl;
             });
         }
 
-        function renderOcrWordBoxes(words) {
+        function renderOcrWordBoxes(words, preparedImage) {
             const image = document.getElementById('ocrImgPreview');
             const overlay = document.getElementById('ocrBoxOverlays');
             if (!image.naturalWidth || !image.naturalHeight) return;
@@ -880,15 +1041,17 @@
             const imageRect = image.getBoundingClientRect();
             const overlayRect = overlay.getBoundingClientRect();
             if (!overlayRect.width || !overlayRect.height) return;
-            const scaleX = imageRect.width / image.naturalWidth;
-            const scaleY = imageRect.height / image.naturalHeight;
             words.filter(word => word.text.trim() && word.confidence >= 45 && word.bbox).forEach(word => {
                 const box = document.createElement('div');
                 box.className = 'ocr-box';
-                box.style.left = `${((imageRect.left - overlayRect.left + word.bbox.x0 * scaleX) / overlayRect.width) * 100}%`;
-                box.style.top = `${((imageRect.top - overlayRect.top + word.bbox.y0 * scaleY) / overlayRect.height) * 100}%`;
-                box.style.width = `${((word.bbox.x1 - word.bbox.x0) * scaleX / overlayRect.width) * 100}%`;
-                box.style.height = `${((word.bbox.y1 - word.bbox.y0) * scaleY / overlayRect.height) * 100}%`;
+                const x = preparedImage.crop.x + word.bbox.x0 / preparedImage.scaleX;
+                const y = preparedImage.crop.y + word.bbox.y0 / preparedImage.scaleY;
+                const width = (word.bbox.x1 - word.bbox.x0) / preparedImage.scaleX;
+                const height = (word.bbox.y1 - word.bbox.y0) / preparedImage.scaleY;
+                box.style.left = `${((imageRect.left - overlayRect.left + x * imageRect.width / image.naturalWidth) / overlayRect.width) * 100}%`;
+                box.style.top = `${((imageRect.top - overlayRect.top + y * imageRect.height / image.naturalHeight) / overlayRect.height) * 100}%`;
+                box.style.width = `${(width * imageRect.width / image.naturalWidth / overlayRect.width) * 100}%`;
+                box.style.height = `${(height * imageRect.height / image.naturalHeight / overlayRect.height) * 100}%`;
                 overlay.appendChild(box);
             });
         }
@@ -990,7 +1153,7 @@
 
         async function runOcrScan() {
             const imageToScan = activeOcrImage;
-            if(!imageToScan) return;
+            if (!imageToScan || document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode')) return;
 
             const scanLaser = document.getElementById('scanLaser');
             const badge = document.getElementById('ocrStatusBadge');
@@ -1008,11 +1171,12 @@
             document.getElementById('ocrScanBtn').disabled = true;
             document.getElementById('ocrPostBtn').disabled = true;
             overlays.innerHTML = '';
+            document.getElementById('ocrCropOverlay').classList.add('hidden');
 
             try {
-                const enhancedImage = await prepareImageForOcr(imageToScan.imgSrc);
+                const preparedImage = await prepareImageForOcr(imageToScan.imgSrc, imageToScan.crop);
                 if (activeOcrImage !== imageToScan) return;
-                const recognition = await window.Tesseract.recognize(enhancedImage, 'eng', {
+                const recognition = await window.Tesseract.recognize(preparedImage.src, 'eng', {
                         logger: progress => {
                             if (progress.status === 'recognizing text' && Number.isFinite(progress.progress)) {
                                 setOcrStatus(`Recognizing receipt text... ${Math.round(progress.progress * 100)}%`, 'amber');
@@ -1025,7 +1189,7 @@
                 const result = parseReceiptText(recognizedText);
 
                 scanLaser.classList.add('hidden');
-                renderOcrWordBoxes(recognition.data.words);
+                renderOcrWordBoxes(recognition.data.words || [], preparedImage);
                 document.getElementById('ocrVendor').value = result.vendor;
                 document.getElementById('ocrDate').value = result.date;
                 document.getElementById('ocrAmount').value = result.amount;
@@ -1040,9 +1204,10 @@
                     const confidence = wordConfidences.length
                         ? wordConfidences.reduce((total, value) => total + value, 0) / wordConfidences.length
                         : 0;
+                    const needsReview = confidence < 65 || !result.vendor || !result.date || result.amount === '';
                     setOcrStatus(
-                        confidence < 55 ? 'Low confidence — retake or verify fields' : 'Text extracted — review fields before posting',
-                        confidence < 55 ? 'amber' : 'emerald'
+                        needsReview ? 'Check extracted fields — crop or retake if inaccurate' : 'Text extracted — review fields before posting',
+                        needsReview ? 'amber' : 'emerald'
                     );
                     document.getElementById('ocrPostBtn').disabled = false;
                 }
@@ -1054,7 +1219,8 @@
             } finally {
                 badge.classList.remove('animate-pulse');
                 document.getElementById('scanLaser').classList.add('hidden');
-                document.getElementById('ocrScanBtn').disabled = !activeOcrImage;
+                document.getElementById('ocrScanBtn').disabled = !activeOcrImage
+                    || document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode');
             }
         }
 

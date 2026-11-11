@@ -380,7 +380,7 @@
                             </div>
                             <div>
                                 <p class="text-slate-200 font-medium text-sm">Take a photo of your receipt or choose an image</p>
-                                <p class="text-xs text-slate-400 mt-1">For a sharper scan, keep the receipt flat, fill the frame, hold steady, tap to focus, and avoid glare.</p>
+                                <p class="text-xs text-slate-400 mt-1">For sharper results, keep the receipt flat, hold steady, tap to focus, and avoid glare. Crop small receipts before scanning; retake out-of-focus photos because cropping cannot restore blurred text.</p>
                             </div>
                             <div class="flex flex-col sm:flex-row justify-center gap-2">
                                 <label class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-sm transition">
@@ -396,7 +396,7 @@
 
                         <!-- Image Preview & Laser Beam Overlay -->
                         <div id="ocrPreviewContainer" class="hidden relative w-full h-full flex items-center justify-center">
-                            <img id="ocrImgPreview" src="" alt="Receipt Preview" class="max-h-[350px] max-w-full rounded-lg object-contain shadow-2xl">
+                            <img id="ocrImgPreview" src="" alt="Receipt Preview" onpointerdown="startOcrCrop(event)" onpointermove="moveOcrCrop(event)" onpointerup="finishOcrCrop(event)" onpointercancel="cancelOcrCrop(event)" class="max-h-[350px] max-w-full rounded-lg object-contain shadow-2xl">
                             <div class="absolute top-2 right-2 z-10 flex gap-2">
                                 <button type="button" onclick="retakeOcrPhoto()" class="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow" aria-label="Retake receipt photo">
                                     <i class="fa-solid fa-camera-rotate mr-1"></i> Retake
@@ -407,6 +407,18 @@
                             </div>
                             <div id="scanLaser" class="hidden scan-laser"></div>
                             <div id="ocrBoxOverlays" class="absolute inset-0 pointer-events-none"></div>
+                            <div id="ocrCropOverlay" class="absolute inset-0 pointer-events-none">
+                                <div id="ocrCropSelection" class="hidden absolute border-2 border-amber-300 bg-amber-300/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.5)]"></div>
+                            </div>
+                        </div>
+                        <div id="ocrCropControls" class="hidden mt-3 flex flex-wrap items-center justify-center gap-2">
+                            <button type="button" id="ocrCropModeBtn" onclick="toggleOcrCropMode()" class="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold shadow">
+                                <i class="fa-solid fa-crop-simple mr-1"></i> Select receipt area
+                            </button>
+                            <button type="button" onclick="useFullOcrPhoto()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg text-xs font-semibold shadow">
+                                Use full photo
+                            </button>
+                            <span id="ocrCropHint" class="w-full text-center text-xs text-slate-400">Drag around the receipt text to scan just that area.</span>
                         </div>
                     </div>
                 </div>

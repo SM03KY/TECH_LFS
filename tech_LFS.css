@@ -31,6 +31,8 @@
             background-color: rgba(59, 130, 246, 0.2);
             transition: all 0.3s ease;
         }
+        #ocrPreviewContainer.ocr-crop-mode #ocrImgPreview { cursor: crosshair; touch-action: none; }
+        #ocrCropSelection { touch-action: none; }
         #receiptDialog::backdrop { background: rgba(2, 6, 23, 0.75); }
         #receiptDialog[open] { display: block; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
