@@ -351,7 +351,7 @@ function analyzeReceiptWithGemini(string $mimeType, string $imageBytes): array
         ],
     ];
     $encodedRequest = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-    $curl = curl_init('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    $curl = curl_init('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
     curl_setopt_array($curl, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $encodedRequest,
