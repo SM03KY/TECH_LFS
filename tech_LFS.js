@@ -8,33 +8,6 @@
             Equity: ["Unrestricted Fund Balance", "Restricted Grant Fund Balance"]
         };
 
-        const ocrPresets = {
-            gala: {
-                vendor: "Grand Palace Catering",
-                date: "2026-11-06",
-                amount: 1850.00,
-                subCategory: "Event Expenses",
-                rawText: "GRAND PALACE CATERING\nDate: 2026-11-06\nBanquet Catering (100 pax) - ₱1,500.00\nAudio/Visual Rental - ₱350.00\nTotal Amount: ₱1,850.00\nPaid in Full",
-                imgSrc: "https://placehold.co/500x700/0f172a/3b82f6?text=ANNUAL+GALA+CATERING%0A%0AGrand+Palace%0ADate:+2026-11-06%0ATotal:+₱1,850.00"
-            },
-            grant: {
-                vendor: "TechLab Scientific Ltd",
-                date: "2026-11-05",
-                amount: 3400.00,
-                subCategory: "Research & Lab Supplies",
-                rawText: "TECHLAB SCIENTIFIC INVOICE\nDate: 2026-11-05\nInvoice #TL-8841\nHigh-Performance Compute Node - ₱3,400.00\nGrant Code: RES-2026\nPayment Status: Completed",
-                imgSrc: "https://placehold.co/500x700/1e1b4b/6366f1?text=GRANT+RESEARCH+INVOICE%0A%0ATechLab+Scientific%0ADate:+2026-11-05%0ATotal:+₱3,400.00"
-            },
-            office: {
-                vendor: "Metro Office & Utilities",
-                date: "2026-11-07",
-                amount: 215.80,
-                subCategory: "Office & Admin Expense",
-                rawText: "METRO UTILITIES & OFFICE\nDate: 2026-11-07\nFiber Internet Billing - ₱140.00\nPaper & Office Supplies - ₱75.80\nTOTAL: ₱215.80\nPaid via Transfer",
-                imgSrc: "https://placehold.co/500x700/14532d/22c55e?text=HQ+OFFICE+RECEIPT%0A%0AMetro+Utilities%0ADate:+2026-11-07%0ATotal:+₱215.80"
-            }
-        };
-
         // State variables
         let orgState = {
             name: "Global Tech Foundation",
@@ -47,7 +20,7 @@
         let csrfToken = "";
         let incomeExpenseChartInstance = null;
         let categoryChartInstance = null;
-        let activeOcrPreset = null;
+        let activeOcrImage = null;
         let pendingOcrAttachment = null;
 
         const currencySymbols = { PHP: "₱" };
@@ -780,26 +753,6 @@
         }
 
         // PHOTO-TO-TEXT RECEIPT SCANNER
-        function loadOcrPreset(key) {
-            const preset = ocrPresets[key];
-            if(!preset) return;
-            activeOcrPreset = { ...preset, isSample: true };
-            pendingOcrAttachment = null;
-
-            document.getElementById('ocrUploadPrompt').classList.add('hidden');
-            document.getElementById('ocrPreviewContainer').classList.remove('hidden');
-            document.getElementById('ocrImgPreview').src = preset.imgSrc;
-
-            clearOcrFields();
-
-            document.getElementById('ocrStatusBadge').textContent = 'Image Ready for Scan';
-            document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400';
-
-            document.getElementById('ocrScanBtn').disabled = false;
-            document.getElementById('ocrPostBtn').disabled = true;
-            document.getElementById('ocrBoxOverlays').innerHTML = '';
-        }
-
         function clearOcrFields() {
             document.getElementById('ocrVendor').value = '';
             document.getElementById('ocrDate').value = '';
@@ -809,51 +762,114 @@
             document.getElementById('ocrPostBtn').disabled = true;
         }
 
+        function setOcrStatus(message, color) {
+            const badge = document.getElementById('ocrStatusBadge');
+            badge.textContent = message;
+            const colorClasses = {
+                slate: 'bg-slate-800 text-slate-400',
+                blue: 'bg-blue-500/20 text-blue-400',
+                rose: 'bg-rose-500/20 text-rose-400',
+                amber: 'bg-amber-500/20 text-amber-400',
+                emerald: 'bg-emerald-500/20 text-emerald-400'
+            };
+            badge.className = `text-xs font-semibold px-2.5 py-0.5 rounded-full ${colorClasses[color] || colorClasses.slate}`;
+        }
+
+        function retakeOcrPhoto() {
+            const cameraInput = document.getElementById('ocrCameraInput');
+            cameraInput.value = '';
+            cameraInput.click();
+        }
+
+        function clearOcrPhoto() {
+            activeOcrImage = null;
+            pendingOcrAttachment = null;
+            document.getElementById('ocrImgPreview').removeAttribute('src');
+            document.getElementById('ocrPreviewContainer').classList.add('hidden');
+            document.getElementById('ocrUploadPrompt').classList.remove('hidden');
+            document.getElementById('ocrCameraInput').value = '';
+            document.getElementById('ocrFileInput').value = '';
+            document.getElementById('ocrBoxOverlays').innerHTML = '';
+            document.getElementById('scanLaser').classList.add('hidden');
+            document.getElementById('ocrScanBtn').disabled = true;
+            clearOcrFields();
+            setOcrStatus('Awaiting Upload', 'slate');
+        }
+
         function handleImageFile(e) {
             const input = e.target;
             const file = input.files[0];
             if(!file) return;
-            input.value = '';
-            pendingOcrAttachment = null;
-            activeOcrPreset = null;
-            clearOcrFields();
-            document.getElementById('ocrScanBtn').disabled = true;
+            clearOcrPhoto();
 
             if (!file.type.startsWith('image/')) {
-                document.getElementById('ocrStatusBadge').textContent = 'Please choose an image file';
-                document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+                setOcrStatus('Please choose an image file', 'rose');
                 return;
             }
 
             const reader = new FileReader();
             reader.onload = function(evt) {
                 if(typeof evt.target.result !== 'string') {
-                    document.getElementById('ocrStatusBadge').textContent = 'Could not load image';
-                    document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+                    setOcrStatus('Could not load image', 'rose');
                     return;
                 }
 
-                activeOcrPreset = { imgSrc: evt.target.result, isSample: false };
+                activeOcrImage = { imgSrc: evt.target.result };
 
                 document.getElementById('ocrUploadPrompt').classList.add('hidden');
                 document.getElementById('ocrPreviewContainer').classList.remove('hidden');
                 document.getElementById('ocrImgPreview').src = evt.target.result;
                 clearOcrFields();
-                document.getElementById('ocrStatusBadge').textContent = 'Image Ready for Scan';
-                document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400';
+                setOcrStatus('Image Ready for Scan', 'blue');
                 document.getElementById('ocrBoxOverlays').innerHTML = '';
 
                 document.getElementById('ocrScanBtn').disabled = false;
                 document.getElementById('ocrPostBtn').disabled = true;
             };
             reader.onerror = function() {
-                activeOcrPreset = null;
-                document.getElementById('ocrStatusBadge').textContent = 'Could not load image';
-                document.getElementById('ocrStatusBadge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+                activeOcrImage = null;
+                setOcrStatus('Could not load image', 'rose');
                 document.getElementById('ocrScanBtn').disabled = true;
                 document.getElementById('ocrPostBtn').disabled = true;
             };
             reader.readAsDataURL(file);
+        }
+
+        function prepareImageForOcr(dataUrl) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => {
+                    const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+                    const scale = Math.min(2, 2400 / longestSide);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+                    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                    const context = canvas.getContext('2d', { willReadFrequently: true });
+                    if (!context) {
+                        reject(new Error('Could not enhance the receipt image for scanning.'));
+                        return;
+                    }
+
+                    context.fillStyle = '#ffffff';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.imageSmoothingQuality = 'high';
+                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+                    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                    const pixels = imageData.data;
+                    for (let index = 0; index < pixels.length; index += 4) {
+                        const grayscale = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+                        const enhanced = Math.max(0, Math.min(255, (grayscale - 128) * 1.25 + 128));
+                        pixels[index] = enhanced;
+                        pixels[index + 1] = enhanced;
+                        pixels[index + 2] = enhanced;
+                    }
+                    context.putImageData(imageData, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                image.onerror = () => reject(new Error('Could not enhance the receipt image for scanning.'));
+                image.src = dataUrl;
+            });
         }
 
         function renderOcrWordBoxes(words) {
@@ -973,39 +989,43 @@
         }
 
         async function runOcrScan() {
-            if(!activeOcrPreset) return;
+            const imageToScan = activeOcrImage;
+            if(!imageToScan) return;
 
             const scanLaser = document.getElementById('scanLaser');
             const badge = document.getElementById('ocrStatusBadge');
             const overlays = document.getElementById('ocrBoxOverlays');
 
-            if (!activeOcrPreset.isSample && !window.Tesseract) {
-                badge.textContent = 'OCR engine unavailable';
-                badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+            if (!window.Tesseract) {
+                setOcrStatus('OCR engine unavailable', 'rose');
                 notifyUser('The OCR engine could not be loaded. Check your internet connection and reload the page.');
                 return;
             }
 
             scanLaser.classList.remove('hidden');
-            badge.textContent = 'Recognizing receipt text...';
-            badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 animate-pulse';
+            setOcrStatus('Enhancing photo for scan...', 'amber');
+            badge.classList.add('animate-pulse');
             document.getElementById('ocrScanBtn').disabled = true;
             document.getElementById('ocrPostBtn').disabled = true;
             overlays.innerHTML = '';
 
             try {
-                const recognition = activeOcrPreset.isSample ? null : await window.Tesseract.recognize(activeOcrPreset.imgSrc, 'eng', {
+                const enhancedImage = await prepareImageForOcr(imageToScan.imgSrc);
+                if (activeOcrImage !== imageToScan) return;
+                const recognition = await window.Tesseract.recognize(enhancedImage, 'eng', {
                         logger: progress => {
                             if (progress.status === 'recognizing text' && Number.isFinite(progress.progress)) {
-                                badge.textContent = `Recognizing receipt text... ${Math.round(progress.progress * 100)}%`;
+                                setOcrStatus(`Recognizing receipt text... ${Math.round(progress.progress * 100)}%`, 'amber');
+                                badge.classList.add('animate-pulse');
                             }
                         }
                     });
-                const recognizedText = recognition ? recognition.data.text : activeOcrPreset.rawText;
+                if (activeOcrImage !== imageToScan) return;
+                const recognizedText = recognition.data.text;
                 const result = parseReceiptText(recognizedText);
 
                 scanLaser.classList.add('hidden');
-                if (recognition) renderOcrWordBoxes(recognition.data.words);
+                renderOcrWordBoxes(recognition.data.words);
                 document.getElementById('ocrVendor').value = result.vendor;
                 document.getElementById('ocrDate').value = result.date;
                 document.getElementById('ocrAmount').value = result.amount;
@@ -1013,25 +1033,34 @@
                 document.getElementById('ocrRawText').value = result.rawText;
 
                 if (!result.rawText) {
-                    badge.textContent = 'No text found; try a clearer image';
-                    badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+                    setOcrStatus('No text found; try a clearer photo', 'rose');
                 } else {
-                    badge.textContent = 'Text extracted — review fields before posting';
-                    badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400';
+                    const words = recognition.data.words || [];
+                    const wordConfidences = words.map(word => word.confidence).filter(Number.isFinite);
+                    const confidence = wordConfidences.length
+                        ? wordConfidences.reduce((total, value) => total + value, 0) / wordConfidences.length
+                        : 0;
+                    setOcrStatus(
+                        confidence < 55 ? 'Low confidence — retake or verify fields' : 'Text extracted — review fields before posting',
+                        confidence < 55 ? 'amber' : 'emerald'
+                    );
                     document.getElementById('ocrPostBtn').disabled = false;
                 }
             } catch (error) {
+                if (activeOcrImage !== imageToScan) return;
                 scanLaser.classList.add('hidden');
-                badge.textContent = 'Could not scan image';
-                badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400';
+                setOcrStatus('Could not scan image', 'rose');
                 notifyUser(`Could not scan the receipt: ${error.message}`);
             } finally {
-                document.getElementById('ocrScanBtn').disabled = false;
+                badge.classList.remove('animate-pulse');
+                document.getElementById('scanLaser').classList.add('hidden');
+                document.getElementById('ocrScanBtn').disabled = !activeOcrImage;
             }
         }
 
         async function postOcrToLedger() {
-            if(!activeOcrPreset) return;
+            const imageToPost = activeOcrImage;
+            if(!imageToPost) return;
 
             const vendor = document.getElementById('ocrVendor').value.trim();
             const date = document.getElementById('ocrDate').value;
@@ -1045,7 +1074,8 @@
             const postButton = document.getElementById('ocrPostBtn');
             postButton.disabled = true;
             try {
-                const receiptImage = activeOcrPreset.isSample ? '' : await prepareReceiptImage(activeOcrPreset.imgSrc);
+                const receiptImage = await prepareReceiptImage(imageToPost.imgSrc);
+                if (activeOcrImage !== imageToPost) return;
                 pendingOcrAttachment = {
                     rawOcrText: document.getElementById('ocrRawText').value,
                     receiptImage
@@ -1054,7 +1084,7 @@
                 notifyUser(error.message);
                 return;
             } finally {
-                postButton.disabled = false;
+                postButton.disabled = !activeOcrImage;
             }
 
             switchTab('ledgerTab');

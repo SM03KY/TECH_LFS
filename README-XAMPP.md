@@ -22,6 +22,8 @@ ALTER TABLE transactions
 
 Skip any `ADD COLUMN` for a column that already exists. Manual item/purpose details and OCR text are stored with each transaction; uploaded receipt photos are resized and limited to 3 MB before saving.
 
+The receipt scanner accepts a camera photo or image upload, enhances contrast for OCR, and lets you retake or clear the selected photo. For the best scan, keep the receipt flat, fill the frame, hold the camera steady, tap to focus, and avoid glare. Review low-confidence results or retake a blurry photo before posting.
+
 Use the site through Apache (`http://localhost/Tech/`), not by opening `index.html` from the filesystem. PHP must be enabled and `pdo_mysql` must be available.
 
 ## Roles
