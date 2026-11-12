@@ -181,20 +181,13 @@ function validateCredentials(array $body, bool $includeName = false): array
 
 function validateTransaction(array $input): array
 {
-    $categories = [
-        'Revenue' => ['Membership Dues', 'Grants & Sponsorships', 'Donations & Contributions', 'Event & Ticket Sales', 'Service Consulting Revenue'],
-        'Expense' => ['Program Expenses', 'Event Expenses', 'Research & Lab Supplies', 'Salaries & Honorariums', 'Office & Admin Expense', 'Travel & Transportation', 'Utilities & Rent'],
-        'Asset' => ['Cash / Operating Bank', 'Grant Dedicated Account', 'Accounts Receivable / Pledges', 'Equipment & Assets'],
-        'Liability' => ['Accounts Payable', 'Accrued Vendor Bills', 'Short-term Credit Card'],
-        'Equity' => ['Unrestricted Fund Balance', 'Restricted Grant Fund Balance'],
-    ];
-    $methods = ['Cash / Bank Transfer', 'Accounts Receivable', 'Accounts Payable', 'Grant Account'];
+    $categories = ['Revenue', 'Expense', 'Asset', 'Liability', 'Equity'];
     $id = (string) ($input['id'] ?? '');
     $date = (string) ($input['date'] ?? '');
     $category = (string) ($input['category'] ?? '');
-    $subCategory = (string) ($input['subCategory'] ?? '');
+    $subCategory = trim((string) ($input['subCategory'] ?? ''));
     $description = trim((string) ($input['description'] ?? ''));
-    $method = (string) ($input['method'] ?? '');
+    $method = trim((string) ($input['method'] ?? ''));
     $amount = filter_var($input['amount'] ?? null, FILTER_VALIDATE_FLOAT);
     $manualDetails = $input['manualDetails'] ?? '';
     $rawOcrText = $input['rawOcrText'] ?? '';
@@ -208,8 +201,12 @@ function validateTransaction(array $input): array
     if (count($dateParts) !== 3 || !checkdate((int) $dateParts[1], (int) $dateParts[2], (int) $dateParts[0])) {
         respond(['error' => 'Enter a valid transaction date.'], 422);
     }
-    if (!isset($categories[$category]) || !in_array($subCategory, $categories[$category], true)) {
-        respond(['error' => 'Choose a valid financial category and subcategory.'], 422);
+    if (!in_array($category, $categories, true)) {
+        respond(['error' => 'Choose a valid financial category.'], 422);
+    }
+    $subCategoryLength = preg_match_all('/./us', $subCategory);
+    if ($subCategory === '' || $subCategoryLength === false || $subCategoryLength > 100) {
+        respond(['error' => 'Account subcategory is required and must be 100 characters or fewer.'], 422);
     }
     if ($description === '' || strlen($description) > 255) {
         respond(['error' => 'Description is required and must be 255 characters or fewer.'], 422);
@@ -217,8 +214,9 @@ function validateTransaction(array $input): array
     if ($amount === false || $amount <= 0 || $amount > 999999999999.99) {
         respond(['error' => 'Amount must be greater than zero and within the supported range.'], 422);
     }
-    if (!in_array($method, $methods, true)) {
-        respond(['error' => 'Choose a valid payment method.'], 422);
+    $methodLength = preg_match_all('/./us', $method);
+    if ($method === '' || $methodLength === false || $methodLength > 80) {
+        respond(['error' => 'Payment or account method is required and must be 80 characters or fewer.'], 422);
     }
     if ($id !== '' && !preg_match('/^[a-f0-9-]{36}$/i', $id)) {
         respond(['error' => 'Invalid transaction identifier.'], 422);

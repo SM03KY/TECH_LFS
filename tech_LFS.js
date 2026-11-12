@@ -1,13 +1,4 @@
 ﻿
-        // ACCOUNT CATEGORIES TAILORED FOR ORGANIZATIONS
-        const accountCategories = {
-            Revenue: ["Membership Dues", "Grants & Sponsorships", "Donations & Contributions", "Event & Ticket Sales", "Service Consulting Revenue"],
-            Expense: ["Program Expenses", "Event Expenses", "Research & Lab Supplies", "Salaries & Honorariums", "Office & Admin Expense", "Travel & Transportation", "Utilities & Rent"],
-            Asset: ["Cash / Operating Bank", "Grant Dedicated Account", "Accounts Receivable / Pledges", "Equipment & Assets"],
-            Liability: ["Accounts Payable", "Accrued Vendor Bills", "Short-term Credit Card"],
-            Equity: ["Unrestricted Fund Balance", "Restricted Grant Fund Balance"]
-        };
-
         // State variables
         let orgState = {
             name: "Global Tech Foundation",
@@ -57,7 +48,6 @@
             document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
             const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
             document.querySelectorAll('.currentDateSpan').forEach(el => el.textContent = todayStr);
-            populateSubCategories();
             try {
                 const result = await apiRequest('bootstrap');
                 if (result.authenticated) continueAuthentication(result);
@@ -310,16 +300,6 @@
             }
         }
 
-        function populateSubCategories() {
-            const cat = document.getElementById('entryCategory').value;
-            const subSelect = document.getElementById('entrySubCategory');
-            subSelect.innerHTML = '';
-            const list = accountCategories[cat] || [];
-            list.forEach(sub => {
-                subSelect.innerHTML += `<option value="${sub}">${sub}</option>`;
-            });
-        }
-
         function switchTab(tabId) {
             const tabButton = document.getElementById(`btn-${tabId}`);
             if (!document.getElementById(tabId) || (tabButton && tabButton.classList.contains('hidden'))) return;
@@ -405,7 +385,6 @@
             document.getElementById('editEntryId').value = tx.id;
             document.getElementById('entryDate').value = tx.date;
             document.getElementById('entryCategory').value = tx.category;
-            populateSubCategories();
             document.getElementById('entrySubCategory').value = tx.subCategory;
             document.getElementById('entryDescription').value = tx.description;
             document.getElementById('entryManualDetails').value = tx.manualDetails || '';
@@ -422,7 +401,6 @@
             document.getElementById('editEntryId').value = '';
             document.getElementById('ledgerForm').reset();
             document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
-            populateSubCategories();
             document.getElementById('saveEntryBtn').innerHTML = `<i class="fa-solid fa-plus"></i> Add Journal Entry`;
             document.getElementById('cancelEditBtn').classList.add('hidden');
         }
@@ -606,14 +584,23 @@
         // FINANCIAL STATEMENTS CALCULATOR
         function calculateAndRenderFS() {
             const sym = currencySymbols[orgState.currency];
-            const subCategorySums = {};
+            const subCategorySums = {
+                Revenue: new Map(),
+                Expense: new Map(),
+                Asset: new Map(),
+                Liability: new Map(),
+                Equity: new Map()
+            };
             let totalRevenue = 0, totalExpense = 0;
             let totalAssets = 0, totalLiabilities = 0, totalEquity = 0;
             let liquidCash = 0;
 
             ledgerTransactions.forEach(t => {
                 const amt = t.amount;
-                subCategorySums[t.subCategory] = (subCategorySums[t.subCategory] || 0) + amt;
+                const categorySums = subCategorySums[t.category];
+                if (categorySums) {
+                    categorySums.set(t.subCategory, (categorySums.get(t.subCategory) || 0) + amt);
+                }
 
                 if (t.category === 'Revenue') totalRevenue += amt;
                 if (t.category === 'Expense') totalExpense += amt;
@@ -639,17 +626,15 @@
             fsRevRows.innerHTML = '';
             fsExpRows.innerHTML = '';
 
-            accountCategories.Revenue.forEach(sub => {
-                const val = subCategorySums[sub] || 0;
+            subCategorySums.Revenue.forEach((val, sub) => {
                 if(val > 0) {
-                    fsRevRows.innerHTML += `<div class="flex justify-between py-1.5 text-slate-300"><span>${sub}</span><span class="font-mono">${sym}${val.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></div>`;
+                    appendFinancialStatementRow(fsRevRows, sub, val);
                 }
             });
 
-            accountCategories.Expense.forEach(sub => {
-                const val = subCategorySums[sub] || 0;
+            subCategorySums.Expense.forEach((val, sub) => {
                 if(val > 0) {
-                    fsExpRows.innerHTML += `<div class="flex justify-between py-1.5 text-slate-300"><span>${sub}</span><span class="font-mono text-rose-400">${sym}${val.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></div>`;
+                    appendFinancialStatementRow(fsExpRows, sub, val, 'font-mono text-rose-400');
                 }
             });
 
@@ -664,27 +649,24 @@
 
             fsAssetRows.innerHTML = `<div class="flex justify-between py-1.5 text-slate-200 font-medium"><span>Liquid Cash & Bank Reserves</span><span class="font-mono">${sym}${liquidCash.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></div>`;
             
-            accountCategories.Asset.forEach(sub => {
+            subCategorySums.Asset.forEach((val, sub) => {
                 if(sub.includes('Cash')) return;
-                const val = subCategorySums[sub] || 0;
-                if(val > 0) fsAssetRows.innerHTML += `<div class="flex justify-between py-1.5 text-slate-300"><span>${sub}</span><span class="font-mono">${sym}${val.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></div>`;
+                if(val > 0) appendFinancialStatementRow(fsAssetRows, sub, val);
             });
 
             fsLiabRows.innerHTML = '';
-            accountCategories.Liability.forEach(sub => {
-                const val = subCategorySums[sub] || 0;
-                if(val > 0) fsLiabRows.innerHTML += `<div class="flex justify-between py-1.5 text-slate-300"><span>${sub}</span><span class="font-mono">${sym}${val.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></div>`;
+            subCategorySums.Liability.forEach((val, sub) => {
+                if(val > 0) appendFinancialStatementRow(fsLiabRows, sub, val);
             });
             if(!fsLiabRows.innerHTML) fsLiabRows.innerHTML = `<div class="text-xs text-slate-500 italic py-1">No outstanding liabilities</div>`;
 
             fsEquityRows.innerHTML = '';
-            accountCategories.Equity.forEach(sub => {
-                const val = subCategorySums[sub] || 0;
-                if(val > 0) fsEquityRows.innerHTML += `<div class="flex justify-between py-1.5 text-slate-300"><span>${sub}</span><span class="font-mono">${sym}${val.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></div>`;
+            subCategorySums.Equity.forEach((val, sub) => {
+                if(val > 0) appendFinancialStatementRow(fsEquityRows, sub, val);
             });
 
             const totalEquitiesCombined = totalEquity + netSurplus;
-            const totalAssetsCombined = liquidCash + (totalAssets - (subCategorySums['Cash / Operating Bank'] || 0));
+            const totalAssetsCombined = liquidCash + (totalAssets - (subCategorySums.Asset.get('Cash / Operating Bank') || 0));
             const totalLiabEquitiesCombined = totalLiabilities + totalEquitiesCombined;
 
             document.getElementById('fsTotalAssets').textContent = `${sym}${totalAssetsCombined.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
@@ -702,6 +684,18 @@
             document.getElementById('cfNetCashChange').textContent = `${sym}${netSurplus.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('cfEndingCash').textContent = `${sym}${liquidCash.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
 
+        }
+
+        function appendFinancialStatementRow(container, label, amount, amountClass = 'font-mono') {
+            const row = document.createElement('div');
+            row.className = 'flex justify-between py-1.5 text-slate-300';
+            const labelElement = document.createElement('span');
+            labelElement.textContent = label;
+            const amountElement = document.createElement('span');
+            amountElement.className = amountClass;
+            amountElement.textContent = `${currencySymbols[orgState.currency]}${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+            row.append(labelElement, amountElement);
+            container.appendChild(row);
         }
 
         // RENDER DASHBOARD KPI & CHARTS
@@ -1424,7 +1418,6 @@
 
             document.getElementById('entryDate').value = date;
             document.getElementById('entryCategory').value = 'Expense';
-            populateSubCategories();
             document.getElementById('entrySubCategory').value = subCategory;
             document.getElementById('entryDescription').value = vendor;
             document.getElementById('entryAmount').value = amount;
