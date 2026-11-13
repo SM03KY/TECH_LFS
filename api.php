@@ -316,7 +316,7 @@ function analyzeReceiptWithGemini(string $mimeType, string $imageBytes): array
     $request = [
         'contents' => [[
             'parts' => [
-                ['text' => 'Read this receipt image and return only the requested JSON. Transcribe all readable receipt text in correctedText, fixing obvious OCR spelling errors without changing merchant or product names beyond clear corrections. Extract the printed merchant, transaction date (YYYY-MM-DD), final amount paid, and each purchased line item with its printed description, quantity, unit, unit price, and line total. Do not treat tax, subtotal, change, or tendered cash as the final paid total. Do not invent missing or unreadable values: use an empty string for unknown merchant/date/text, 0 for an unknown amount or item numeric value, and an empty item list if no items are legible. Choose the best-fitting subCategory only from Event Expenses, Program Expenses, Research & Lab Supplies, Office & Admin Expense, or Travel & Transportation; use Program Expenses if the purpose is unclear. Preserve the receipt language and currency; do not translate item names. The result is a draft that a person will review.'],
+                ['text' => 'Read this receipt image and return only the requested JSON. Transcribe all readable receipt text in correctedText, fixing obvious OCR spelling errors without changing merchant or product names beyond clear corrections. Extract the printed merchant, transaction date (YYYY-MM-DD), final amount paid, and each purchased line item with its printed description, quantity, unit, unit price, and line total. Do not treat tax, subtotal, change, or tendered cash as the final paid total. Do not invent missing or unreadable values: use an empty string for unknown merchant/date/text, 0 for an unknown amount or item numeric value, and an empty item list if no items are legible. Generate a concise, specific subCategory suggestion based on the apparent purpose of the purchase; use an empty string if the purpose is unclear. Preserve the receipt language and currency; do not translate item names. The result is a draft that a person will review.'],
                 ['inline_data' => [
                     'mime_type' => $mimeType,
                     'data' => base64_encode($imageBytes),
@@ -331,16 +331,7 @@ function analyzeReceiptWithGemini(string $mimeType, string $imageBytes): array
                     'merchantName' => ['type' => 'STRING'],
                     'receiptDate' => ['type' => 'STRING'],
                     'totalAmount' => ['type' => 'NUMBER'],
-                    'subCategory' => [
-                        'type' => 'STRING',
-                        'enum' => [
-                            'Event Expenses',
-                            'Program Expenses',
-                            'Research & Lab Supplies',
-                            'Office & Admin Expense',
-                            'Travel & Transportation',
-                        ],
-                    ],
+                    'subCategory' => ['type' => 'STRING'],
                     'correctedText' => ['type' => 'STRING'],
                     'items' => ['type' => 'ARRAY', 'items' => $itemSchema],
                 ],
@@ -404,19 +395,11 @@ function analyzeReceiptWithGemini(string $mimeType, string $imageBytes): array
     } else {
         $amount = round($amount, 2);
     }
-    $allowedSubcategories = [
-        'Event Expenses',
-        'Program Expenses',
-        'Research & Lab Supplies',
-        'Office & Admin Expense',
-        'Travel & Transportation',
-    ];
-    $subCategory = (string) ($analysis['subCategory'] ?? '');
-    if (!in_array($subCategory, $allowedSubcategories, true)) {
-        $subCategory = '';
-    }
+    $subCategory = trim((string) ($analysis['subCategory'] ?? ''));
     $correctedText = (string) ($analysis['correctedText'] ?? '');
-    if (strlen($merchant) > 160 || strlen($correctedText) > 20000 || count($analysis['items']) > 50) {
+    $subCategoryLength = preg_match_all('/./us', $subCategory);
+    if (strlen($merchant) > 160 || $subCategoryLength === false || $subCategoryLength > 100
+        || strlen($correctedText) > 20000 || count($analysis['items']) > 50) {
         respond(['error' => 'Gemini returned receipt data that exceeds the supported limits. Try a tighter crop.'], 502);
     }
 

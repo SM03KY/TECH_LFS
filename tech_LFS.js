@@ -782,7 +782,7 @@
             document.getElementById('ocrVendor').value = '';
             document.getElementById('ocrDate').value = '';
             document.getElementById('ocrAmount').value = '';
-            document.getElementById('ocrSubCat').value = 'Program Expenses';
+            document.getElementById('ocrSubCat').value = '';
             document.getElementById('ocrRawText').value = '';
             document.getElementById('ocrCorrectedText').value = '';
             document.getElementById('ocrLineItemsList').innerHTML = '';
@@ -1176,23 +1176,11 @@
                     && !/\b(tax|date|tel|phone|cashier|terminal|transaction|order|customer|payment|total|vat|tin)\b/i.test(line)
                     && !/\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(line)) || '';
             const receiptText = lines.join('\n');
-            const lowerText = receiptText.toLowerCase();
-            let subCategory = 'Program Expenses';
-            if (/\b(taxi|transport|fare|bus|airline|flight|fuel|gasoline|parking)\b/.test(lowerText)) {
-                subCategory = 'Travel & Transportation';
-            } else if (/\b(lab|laboratory|research|scientific|hardware|equipment)\b/.test(lowerText)) {
-                subCategory = 'Research & Lab Supplies';
-            } else if (/\b(catering|venue|gala|event|banquet)\b/.test(lowerText)) {
-                subCategory = 'Event Expenses';
-            } else if (/\b(office|paper|utility|utilities|electricity|internet|water|supplies)\b/.test(lowerText)) {
-                subCategory = 'Office & Admin Expense';
-            }
 
             return {
                 vendor,
                 date: parseOcrDate(receiptText),
                 amount,
-                subCategory,
                 rawText: receiptText
             };
         }
@@ -1312,7 +1300,7 @@
                         document.getElementById('ocrVendor').value = result.vendor;
                         document.getElementById('ocrDate').value = result.date;
                         document.getElementById('ocrAmount').value = result.amount;
-                        document.getElementById('ocrSubCat').value = result.subCategory;
+                        document.getElementById('ocrSubCat').value = '';
                         document.getElementById('ocrRawText').value = result.rawText;
                         if (result.rawText) document.getElementById('ocrPostBtn').disabled = false;
                     } catch (error) {
@@ -1337,9 +1325,7 @@
                 if (analysis.amount !== '' && Number(analysis.amount) > 0) {
                     document.getElementById('ocrAmount').value = analysis.amount;
                 }
-                if ([...document.getElementById('ocrSubCat').options].some(option => option.value === analysis.subCategory)) {
-                    document.getElementById('ocrSubCat').value = analysis.subCategory;
-                }
+                document.getElementById('ocrSubCat').value = analysis.subCategory || '';
                 document.getElementById('ocrCorrectedText').value = analysis.correctedText || '';
                 setOcrLineItems(Array.isArray(analysis.lineItems) ? analysis.lineItems : []);
                 const hasRequiredFields = document.getElementById('ocrVendor').value.trim()
@@ -1377,9 +1363,13 @@
             const vendor = document.getElementById('ocrVendor').value.trim();
             const date = document.getElementById('ocrDate').value;
             const amount = Number(document.getElementById('ocrAmount').value);
-            const subCategory = document.getElementById('ocrSubCat').value;
+            const subCategory = document.getElementById('ocrSubCat').value.trim();
             if (!vendor || !date || !Number.isFinite(amount) || amount <= 0) {
                 notifyUser('Review the extracted fields and enter a vendor, date, and valid amount before posting.');
+                return;
+            }
+            if (!subCategory || subCategory.length > 100) {
+                notifyUser('Enter a subcategory of 100 characters or fewer before posting.');
                 return;
             }
             const enteredItems = collectOcrLineItems();
