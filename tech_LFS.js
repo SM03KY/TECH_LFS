@@ -12,6 +12,7 @@
         let incomeExpenseChartInstance = null;
         let categoryChartInstance = null;
         let activeOcrImage = null;
+        let ocrRawText = '';
         let ocrCropStart = null;
         let ocrCropDraft = null;
         let ocrLineItems = [];
@@ -430,7 +431,6 @@
                     t.subCategory.toLowerCase().includes(search) ||
                     t.category.toLowerCase().includes(search) ||
                     (t.manualDetails || '').toLowerCase().includes(search) ||
-                    (t.rawOcrText || '').toLowerCase().includes(search) ||
                     (t.correctedOcrText || '').toLowerCase().includes(search) ||
                     (t.lineItems || []).some(item => String(item.description || '').toLowerCase().includes(search));
             });
@@ -477,15 +477,18 @@
                 const manualDetailsCell = document.createElement('td');
                 manualDetailsCell.className = 'py-3 px-4 max-w-xs';
                 const manualDetailsPreview = (tx.manualDetails || '').replace(/\s+/g, ' ').trim();
-                if (manualDetailsPreview || (tx.lineItems || []).length) {
+                const lineItems = tx.lineItems || [];
+                if (manualDetailsPreview || lineItems.length || tx.correctedOcrText || tx.hasReceiptPhoto) {
                     const preview = document.createElement('div');
                     preview.className = 'max-w-[220px] truncate text-xs text-slate-400';
-                    preview.textContent = manualDetailsPreview || `${tx.lineItems.length} itemized item${tx.lineItems.length === 1 ? '' : 's'}`;
+                    preview.textContent = manualDetailsPreview || (lineItems.length
+                        ? `${lineItems.length} itemized item${lineItems.length === 1 ? '' : 's'}`
+                        : tx.correctedOcrText ? tx.correctedOcrText.replace(/\s+/g, ' ').trim() : 'Receipt saved');
                     preview.title = preview.textContent;
                     manualDetailsCell.appendChild(preview);
                     const detailsButton = document.createElement('button');
                     detailsButton.className = 'mt-1 text-xs text-blue-400 hover:text-blue-300';
-                    detailsButton.textContent = 'View details';
+                    detailsButton.textContent = tx.hasReceiptPhoto ? 'View receipt details & photo' : 'View details';
                     detailsButton.addEventListener('click', () => openReceiptDetails(tx));
                     manualDetailsCell.appendChild(detailsButton);
                 } else {
@@ -493,25 +496,6 @@
                     manualDetailsCell.className += ' text-slate-500';
                 }
                 tr.appendChild(manualDetailsCell);
-                const ocrCell = document.createElement('td');
-                ocrCell.className = 'py-3 px-4 max-w-xs';
-                const rawTextPreview = (tx.rawOcrText || '').replace(/\s+/g, ' ').trim();
-                if (rawTextPreview || tx.correctedOcrText || tx.hasReceiptPhoto) {
-                    const preview = document.createElement('div');
-                    preview.className = 'max-w-[220px] truncate text-xs text-slate-400';
-                    preview.textContent = rawTextPreview || (tx.correctedOcrText ? tx.correctedOcrText.replace(/\s+/g, ' ').trim() : 'Receipt saved');
-                    preview.title = preview.textContent;
-                    ocrCell.appendChild(preview);
-                    const detailsButton = document.createElement('button');
-                    detailsButton.className = 'mt-1 text-xs text-blue-400 hover:text-blue-300';
-                    detailsButton.textContent = tx.hasReceiptPhoto ? 'View receipt details & photo' : 'View receipt text';
-                    detailsButton.addEventListener('click', () => openReceiptDetails(tx));
-                    ocrCell.appendChild(detailsButton);
-                } else {
-                    ocrCell.textContent = '—';
-                    ocrCell.className += ' text-slate-500';
-                }
-                tr.appendChild(ocrCell);
                 addCell(`${tx.category === 'Revenue' ? '+' : ''}${sym}${Number(tx.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
                     `py-3 px-4 text-right font-mono font-bold ${tx.category === 'Revenue' ? 'text-emerald-400' : 'text-slate-200'}`);
                 if (currentUser.role !== 'auditor') {
@@ -536,13 +520,11 @@
 
         async function openReceiptDetails(transaction) {
             const dialog = document.getElementById('receiptDialog');
-            const text = document.getElementById('receiptDialogText');
             const manualDetails = document.getElementById('receiptDialogManualDetails');
             const correctedText = document.getElementById('receiptDialogCorrectedText');
             const correctedTextSection = document.getElementById('receiptDialogCorrectedTextSection');
             const image = document.getElementById('receiptDialogImage');
             const noImageMessage = document.getElementById('receiptDialogNoImage');
-            text.textContent = transaction.rawOcrText || 'No OCR text was saved for this entry.';
             manualDetails.textContent = transaction.manualDetails || 'No manual details were entered for this entry.';
             correctedText.textContent = transaction.correctedOcrText || '';
             correctedTextSection.classList.toggle('hidden', !transaction.correctedOcrText);
@@ -783,7 +765,7 @@
             document.getElementById('ocrDate').value = '';
             document.getElementById('ocrAmount').value = '';
             document.getElementById('ocrSubCat').value = '';
-            document.getElementById('ocrRawText').value = '';
+            ocrRawText = '';
             document.getElementById('ocrCorrectedText').value = '';
             document.getElementById('ocrLineItemsList').innerHTML = '';
             ocrLineItems = [];
@@ -1301,8 +1283,8 @@
                         document.getElementById('ocrDate').value = result.date;
                         document.getElementById('ocrAmount').value = result.amount;
                         document.getElementById('ocrSubCat').value = '';
-                        document.getElementById('ocrRawText').value = result.rawText;
-                        if (result.rawText) document.getElementById('ocrPostBtn').disabled = false;
+                        ocrRawText = result.rawText;
+                        if (ocrRawText) document.getElementById('ocrPostBtn').disabled = false;
                     } catch (error) {
                         localOcrError = error.message;
                     }
@@ -1339,7 +1321,7 @@
             } catch (error) {
                 if (activeOcrImage !== imageToScan) return;
                 scanLaser.classList.add('hidden');
-                const hasLocalText = document.getElementById('ocrRawText').value.trim();
+                const hasLocalText = ocrRawText.trim();
                 if (hasLocalText) {
                     document.getElementById('ocrPostBtn').disabled = false;
                     setOcrStatus('Gemini unavailable — local OCR ready; review carefully', 'amber');
@@ -1392,7 +1374,7 @@
                 const receiptImage = await prepareReceiptImage(imageToPost.imgSrc);
                 if (activeOcrImage !== imageToPost) return;
                 pendingOcrAttachment = {
-                    rawOcrText: document.getElementById('ocrRawText').value,
+                    rawOcrText: ocrRawText,
                     correctedOcrText: document.getElementById('ocrCorrectedText').value,
                     lineItems,
                     receiptImage

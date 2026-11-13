@@ -322,7 +322,6 @@
                                 <th class="py-3 px-4">Subcategory</th>
                                 <th class="py-3 px-4">Description</th>
                                 <th class="py-3 px-4">Manual Details / Items</th>
-                                <th class="py-3 px-4">Original OCR Text</th>
                                 <th class="py-3 px-4 text-right">Amount</th>
                                 <th data-role="admin treasurer" class="py-3 px-4 text-center">Actions</th>
                             </tr>
@@ -365,10 +364,6 @@
                     <div id="receiptDialogCorrectedTextSection" class="hidden">
                         <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">AI-corrected Receipt Text</h3>
                         <pre id="receiptDialogCorrectedText" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300"></pre>
-                    </div>
-                    <div>
-                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Original Local OCR Text</h3>
-                        <pre id="receiptDialogText" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300"></pre>
                     </div>
                 </div>
             </dialog>
@@ -482,11 +477,6 @@
                                 </div>
                                 <div id="ocrLineItemsList" class="space-y-2"></div>
                                 <p class="mt-1 text-[11px] text-slate-500">AI suggestions can be wrong. Check quantities and prices against the photo; only verified items are saved.</p>
-                            </div>
-
-                            <div>
-                                <label class="text-xs font-semibold text-slate-400 block mb-1">Original local OCR text</label>
-                                <textarea id="ocrRawText" rows="2" readonly class="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none" placeholder="Uncorrected local OCR output..."></textarea>
                             </div>
 
                             <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-200">
@@ -752,6 +742,6 @@
     </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
-    <script src="tech_LFS.js?v=receipt-ai-v2"></script>
+    <script src="tech_LFS.js?v=receipt-ai-v3"></script>
 </body>
 </html>
