@@ -13,6 +13,9 @@
         let categoryChartInstance = null;
         let activeOcrImage = null;
         let ocrRawText = '';
+        let ocrTextImage = null;
+        let localOcrWorkerPromise = null;
+        let ocrProgressHandler = null;
         let ocrCropStart = null;
         let ocrCropDraft = null;
         let ocrLineItems = [];
@@ -766,6 +769,7 @@
             document.getElementById('ocrAmount').value = '';
             document.getElementById('ocrSubCat').value = '';
             ocrRawText = '';
+            ocrTextImage = null;
             document.getElementById('ocrCorrectedText').value = '';
             document.getElementById('ocrLineItemsList').innerHTML = '';
             ocrLineItems = [];
@@ -865,6 +869,7 @@
             document.getElementById('ocrBoxOverlays').innerHTML = '';
             document.getElementById('scanLaser').classList.add('hidden');
             document.getElementById('ocrScanBtn').disabled = true;
+            document.getElementById('ocrGeminiBtn').disabled = true;
             clearOcrFields();
             setOcrStatus('Awaiting Upload', 'slate');
         }
@@ -899,12 +904,14 @@
                 document.getElementById('ocrBoxOverlays').innerHTML = '';
 
                 document.getElementById('ocrScanBtn').disabled = false;
+                document.getElementById('ocrGeminiBtn').disabled = false;
                 document.getElementById('ocrPostBtn').disabled = true;
             };
             reader.onerror = function() {
                 activeOcrImage = null;
                 setOcrStatus('Could not load image', 'rose');
                 document.getElementById('ocrScanBtn').disabled = true;
+                document.getElementById('ocrGeminiBtn').disabled = true;
                 document.getElementById('ocrPostBtn').disabled = true;
             };
             reader.readAsDataURL(file);
@@ -916,6 +923,7 @@
             preview.classList.toggle('ocr-crop-mode');
             const cropMode = preview.classList.contains('ocr-crop-mode');
             document.getElementById('ocrScanBtn').disabled = cropMode;
+            document.getElementById('ocrGeminiBtn').disabled = cropMode;
             document.getElementById('ocrCropOverlay').classList.toggle('hidden', !cropMode && !activeOcrImage.crop);
             if (cropMode) {
                 document.getElementById('ocrBoxOverlays').innerHTML = '';
@@ -943,6 +951,7 @@
             document.getElementById('ocrBoxOverlays').innerHTML = '';
             clearOcrFields();
             document.getElementById('ocrScanBtn').disabled = false;
+            document.getElementById('ocrGeminiBtn').disabled = false;
             setOcrStatus('Using full photo — scan and review the result', 'blue');
             updateOcrCropControls();
         }
@@ -1039,6 +1048,7 @@
             document.getElementById('ocrCropOverlay').classList.remove('hidden');
             clearOcrFields();
             document.getElementById('ocrScanBtn').disabled = false;
+            document.getElementById('ocrGeminiBtn').disabled = false;
             renderOcrCropSelection(activeOcrImage.crop);
             setOcrStatus('Receipt area selected — scan for clearer text', 'blue');
             updateOcrCropControls();
@@ -1246,54 +1256,121 @@
             });
         }
 
+        function getLocalOcrWorker() {
+            if (!window.Tesseract) {
+                throw new Error('The local OCR engine did not load. Check that the bundled OCR files are present.');
+            }
+            if (!localOcrWorkerPromise) {
+                localOcrWorkerPromise = window.Tesseract.createWorker('eng', 1, {
+                    workerPath: new URL('vendor/tesseract/worker.min.js', document.baseURI).href,
+                    corePath: new URL('vendor/tesseract-core/', document.baseURI).href,
+                    langPath: new URL('vendor/tessdata/', document.baseURI).href,
+                    gzip: true,
+                    logger: progress => {
+                        if (typeof ocrProgressHandler === 'function') ocrProgressHandler(progress);
+                    }
+                }).catch(error => {
+                    localOcrWorkerPromise = null;
+                    throw error;
+                });
+            }
+            return localOcrWorkerPromise;
+        }
+
+        async function recognizeReceiptLocally(imageToScan, badge) {
+            const preparedImage = await prepareImageForOcr(imageToScan.imgSrc, imageToScan.crop);
+            if (activeOcrImage !== imageToScan) return false;
+
+            ocrProgressHandler = progress => {
+                if (progress.status === 'recognizing text' && Number.isFinite(progress.progress)) {
+                    setOcrStatus(`Reading receipt locally... ${Math.round(progress.progress * 100)}%`, 'amber');
+                    badge.classList.add('animate-pulse');
+                } else if (progress.status === 'loading language traineddata') {
+                    setOcrStatus('Loading bundled English OCR data...', 'amber');
+                }
+            };
+            try {
+                const worker = await getLocalOcrWorker();
+                if (activeOcrImage !== imageToScan) return false;
+                const recognition = await worker.recognize(preparedImage.src);
+                if (activeOcrImage !== imageToScan) return false;
+
+                const result = parseReceiptText(recognition.data.text);
+                renderOcrWordBoxes(recognition.data.words || [], preparedImage);
+                document.getElementById('ocrVendor').value = result.vendor;
+                document.getElementById('ocrDate').value = result.date;
+                document.getElementById('ocrAmount').value = result.amount;
+                document.getElementById('ocrSubCat').value = '';
+                ocrRawText = result.rawText;
+                document.getElementById('ocrCorrectedText').value = result.rawText;
+                ocrTextImage = imageToScan;
+                document.getElementById('ocrPostBtn').disabled = !ocrRawText;
+                return Boolean(ocrRawText);
+            } finally {
+                ocrProgressHandler = null;
+            }
+        }
+
+        function setOcrActionsDisabled(disabled) {
+            const unavailable = !activeOcrImage
+                || document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode');
+            document.getElementById('ocrScanBtn').disabled = disabled || unavailable;
+            document.getElementById('ocrGeminiBtn').disabled = disabled || unavailable;
+        }
+
         async function runOcrScan() {
             const imageToScan = activeOcrImage;
             if (!imageToScan || document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode')) return;
 
-            const scanLaser = document.getElementById('scanLaser');
             const badge = document.getElementById('ocrStatusBadge');
-            const overlays = document.getElementById('ocrBoxOverlays');
-
-            scanLaser.classList.remove('hidden');
-            setOcrStatus('Reading photo locally, then analyzing with Gemini...', 'amber');
-            badge.classList.add('animate-pulse');
-            document.getElementById('ocrScanBtn').disabled = true;
-            document.getElementById('ocrPostBtn').disabled = true;
-            overlays.innerHTML = '';
+            document.getElementById('scanLaser').classList.remove('hidden');
+            document.getElementById('ocrBoxOverlays').innerHTML = '';
             document.getElementById('ocrCropOverlay').classList.add('hidden');
-            let localOcrError = '';
+            document.getElementById('ocrPostBtn').disabled = true;
+            setOcrActionsDisabled(true);
+            setOcrStatus('Preparing local receipt scan...', 'amber');
+            badge.classList.add('animate-pulse');
 
             try {
-                if (window.Tesseract) {
+                const foundText = await recognizeReceiptLocally(imageToScan, badge);
+                if (activeOcrImage !== imageToScan) return;
+                setOcrStatus(
+                    foundText ? 'Local OCR ready — review fields and complete the subcategory' : 'No text found — try a clearer photo',
+                    foundText ? 'emerald' : 'rose'
+                );
+            } catch (error) {
+                if (activeOcrImage !== imageToScan) return;
+                setOcrStatus('Local OCR could not start', 'rose');
+                notifyUser(error.message);
+            } finally {
+                badge.classList.remove('animate-pulse');
+                document.getElementById('scanLaser').classList.add('hidden');
+                setOcrActionsDisabled(false);
+            }
+        }
+
+        async function analyzeOcrWithGemini() {
+            const imageToScan = activeOcrImage;
+            if (!imageToScan || document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode')) return;
+
+            const badge = document.getElementById('ocrStatusBadge');
+            let localOcrError = '';
+            document.getElementById('scanLaser').classList.remove('hidden');
+            document.getElementById('ocrPostBtn').disabled = true;
+            setOcrActionsDisabled(true);
+            badge.classList.add('animate-pulse');
+
+            try {
+                if (ocrTextImage !== imageToScan) {
+                    setOcrStatus('Reading receipt locally before online analysis...', 'amber');
                     try {
-                        const preparedImage = await prepareImageForOcr(imageToScan.imgSrc, imageToScan.crop);
-                        if (activeOcrImage !== imageToScan) return;
-                        const recognition = await window.Tesseract.recognize(preparedImage.src, 'eng', {
-                        logger: progress => {
-                            if (progress.status === 'recognizing text' && Number.isFinite(progress.progress)) {
-                                setOcrStatus(`Recognizing receipt text... ${Math.round(progress.progress * 100)}%`, 'amber');
-                                badge.classList.add('animate-pulse');
-                            }
-                        }
-                        });
-                        if (activeOcrImage !== imageToScan) return;
-                        const result = parseReceiptText(recognition.data.text);
-                        renderOcrWordBoxes(recognition.data.words || [], preparedImage);
-                        document.getElementById('ocrVendor').value = result.vendor;
-                        document.getElementById('ocrDate').value = result.date;
-                        document.getElementById('ocrAmount').value = result.amount;
-                        document.getElementById('ocrSubCat').value = '';
-                        ocrRawText = result.rawText;
-                        if (ocrRawText) document.getElementById('ocrPostBtn').disabled = false;
+                        await recognizeReceiptLocally(imageToScan, badge);
                     } catch (error) {
                         localOcrError = error.message;
                     }
-                } else {
-                    localOcrError = 'Local OCR engine unavailable.';
                 }
-
                 if (activeOcrImage !== imageToScan) return;
-                setOcrStatus('Sending selected photo area to Gemini for understanding...', 'amber');
+                setOcrStatus('Sending selected photo area to Gemini...', 'amber');
                 const aiImage = await prepareImageForAi(imageToScan.imgSrc, imageToScan.crop);
                 if (activeOcrImage !== imageToScan) return;
                 const response = await apiRequest('receipt_ai', {
@@ -1315,26 +1392,23 @@
                     && Number(document.getElementById('ocrAmount').value) > 0;
                 document.getElementById('ocrPostBtn').disabled = !hasRequiredFields;
                 setOcrStatus(
-                    hasRequiredFields ? 'AI suggestions ready — review all fields and items' : 'AI analysis ready — complete missing fields and review items',
+                    hasRequiredFields ? 'Gemini suggestions ready — review before posting' : 'Gemini analysis ready — complete missing fields',
                     'amber'
                 );
             } catch (error) {
                 if (activeOcrImage !== imageToScan) return;
-                scanLaser.classList.add('hidden');
                 const hasLocalText = ocrRawText.trim();
                 if (hasLocalText) {
                     document.getElementById('ocrPostBtn').disabled = false;
-                    setOcrStatus('Gemini unavailable — local OCR ready; review carefully', 'amber');
-                    notifyUser(`${error.message}${localOcrError ? ` Local OCR note: ${localOcrError}` : ''}`);
+                    setOcrStatus('Gemini unavailable — local OCR is ready', 'amber');
                 } else {
-                    setOcrStatus('Could not analyze receipt — try local OCR or a clearer photo', 'rose');
-                    notifyUser(`${error.message}${localOcrError ? ` ${localOcrError}` : ''}`);
+                    setOcrStatus('Gemini unavailable — try local OCR', 'rose');
                 }
+                notifyUser(`${error.message}${localOcrError ? ` Local OCR note: ${localOcrError}` : ''}`);
             } finally {
                 badge.classList.remove('animate-pulse');
                 document.getElementById('scanLaser').classList.add('hidden');
-                document.getElementById('ocrScanBtn').disabled = !activeOcrImage
-                    || document.getElementById('ocrPreviewContainer').classList.contains('ocr-crop-mode');
+                setOcrActionsDisabled(false);
             }
         }
 
