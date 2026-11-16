@@ -7,7 +7,7 @@
 3. Open `http://localhost/phpmyadmin`, import `api/techpass.sql`, and confirm the `techpass` database and empty tables were created. The schema inserts no users, organization settings, or sample transactions.
 4. If your MySQL account is not the XAMPP default `root` account with a blank password, set `TECHPASS_DB_HOST`, `TECHPASS_DB_PORT`, `TECHPASS_DB_NAME`, `TECHPASS_DB_USER`, and `TECHPASS_DB_PASSWORD` in the Apache/PHP environment, or update the local defaults in `api/config.php`.
 5. To create the initial Admin account from a command prompt, run `C:\xampp\php\php.exe C:\xampp\htdocs\Tech\setup-admin.php`. It creates the account only when the users table is empty. The account is `admin` with temporary password `ChangeMe123!`; the app requires changing it before access. Do not keep using the temporary password.
-6. Alternatively, open `http://localhost/Tech/` and use the one-time Admin setup form to select your own credentials. This creates the Admin account and minimum organization settings; the ledger remains empty. After signing in, use **Org Governance → User accounts** to create Treasurer and Auditor accounts.
+6. Alternatively, open `http://localhost/Tech/` and use the one-time Admin setup form to select your own credentials. This creates the Admin account and minimum organization settings; the ledger remains empty. After signing in, use **Org Governance → User accounts** to create Treasurer and Auditor accounts. Accounts created by an Admin must change the temporary password at first sign-in; all signed-in users can change their password from the **Change password** button.
 
 If upgrading an existing database, run the following in phpMyAdmin before using the app:
 
@@ -40,7 +40,7 @@ Use the site through Apache (`http://localhost/Tech/`), not by opening `index.ht
 | Treasurer | Create, edit, delete, export, and review financial records; use receipt scanning and prepare reports. |
 | Auditor | Read-only access to the dashboard, ledger, financial statements, and CSV export. |
 
-Authorization is checked by the PHP API as well as by the interface. Passwords are stored as PHP password hashes; sessions use HTTP-only, same-site cookies and state-changing requests require a CSRF token. The command-line setup account is forced to change its temporary password before other actions are permitted.
+Authorization is checked by the PHP API as well as by the interface. Passwords are stored as PHP password hashes; sessions use HTTP-only, same-site cookies and state-changing requests require a CSRF token. Admin-created accounts and the command-line setup account are forced to change their temporary password before other actions are permitted.
 
 ## Data and deployment notes
 

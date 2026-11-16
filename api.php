@@ -526,7 +526,7 @@ try {
             respond(['error' => 'New password must be at least 12 characters.'], 422);
         }
         if ($currentPassword === $newPassword) {
-            respond(['error' => 'Choose a new password different from the temporary password.'], 422);
+            respond(['error' => 'Choose a new password different from your current password.'], 422);
         }
         $statement = $db->prepare('SELECT password_hash FROM users WHERE id = ? AND is_active = 1');
         $statement->execute([$user['id']]);
@@ -717,7 +717,10 @@ try {
             respond(['error' => 'Choose Admin, Treasurer, or Auditor.'], 422);
         }
         try {
-            $statement = $db->prepare('INSERT INTO users (name, username, password_hash, role) VALUES (?, ?, ?, ?)');
+            $statement = $db->prepare(
+                'INSERT INTO users (name, username, password_hash, role, must_change_password)
+                 VALUES (?, ?, ?, ?, 1)'
+            );
             $statement->execute([$name, $username, password_hash($password, PASSWORD_DEFAULT), $role]);
         } catch (PDOException $error) {
             if (in_array($error->getCode(), ['23000', '23505'], true)) {

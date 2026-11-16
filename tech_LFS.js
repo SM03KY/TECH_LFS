@@ -164,6 +164,44 @@
             }
         }
 
+        function openAccountPasswordDialog() {
+            const form = document.getElementById('accountPasswordForm');
+            form.reset();
+            const message = document.getElementById('accountPasswordMessage');
+            message.textContent = '';
+            message.classList.add('hidden');
+            document.getElementById('accountPasswordDialog').showModal();
+        }
+
+        function closeAccountPasswordDialog() {
+            document.getElementById('accountPasswordDialog').close();
+        }
+
+        async function changeAccountPassword(event) {
+            event.preventDefault();
+            const newPassword = document.getElementById('accountNewPassword').value;
+            const message = document.getElementById('accountPasswordMessage');
+            if (newPassword !== document.getElementById('accountConfirmPassword').value) {
+                message.textContent = 'The new passwords do not match.';
+                message.classList.remove('hidden');
+                return;
+            }
+            try {
+                await apiRequest('change_password', {
+                    method: 'POST',
+                    body: {
+                        currentPassword: document.getElementById('accountCurrentPassword').value,
+                        newPassword
+                    }
+                });
+                closeAccountPasswordDialog();
+                notifyUser('Password changed successfully.');
+            } catch (error) {
+                message.textContent = error.message;
+                message.classList.remove('hidden');
+            }
+        }
+
         async function logout() {
             try {
                 await apiRequest('logout', { method: 'POST', body: {} });
