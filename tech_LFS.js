@@ -36,6 +36,10 @@
                     });
                 });
             });
+            const passwordDialog = document.getElementById('accountPasswordDialog');
+            passwordDialog.addEventListener('cancel', event => {
+                if (passwordDialog.dataset.mustChange === 'true') event.preventDefault();
+            });
         }
 
         window.onload = async function() {
@@ -76,7 +80,6 @@
             document.getElementById('application').classList.add('hidden');
             document.getElementById('setupForm').classList.toggle('hidden', mode !== 'setup');
             document.getElementById('loginForm').classList.toggle('hidden', mode !== 'login');
-            document.getElementById('passwordChangeForm').classList.toggle('hidden', mode !== 'passwordChange');
             const messageElement = document.getElementById('authMessage');
             messageElement.textContent = message;
             messageElement.classList.toggle('hidden', !message);
@@ -98,13 +101,8 @@
         }
 
         function continueAuthentication(data) {
-            currentUser = data.user;
-            csrfToken = data.csrfToken;
-            if (data.needsPasswordChange) {
-                showAuthForm('passwordChange');
-                return;
-            }
             initializeApplication(data);
+            if (data.needsPasswordChange) openAccountPasswordDialog(true);
         }
 
         async function login(event) {
@@ -142,58 +140,61 @@
             }
         }
 
-        async function changePassword(event) {
-            event.preventDefault();
-            const newPassword = document.getElementById('newPassword').value;
-            if (newPassword !== document.getElementById('confirmPassword').value) {
-                showAuthForm('passwordChange', 'The new passwords do not match.');
-                return;
-            }
-            try {
-                const result = await apiRequest('change_password', {
-                    method: 'POST',
-                    body: {
-                        currentPassword: document.getElementById('currentPassword').value,
-                        newPassword
-                    }
-                });
-                document.getElementById('passwordChangeForm').reset();
-                continueAuthentication(result);
-            } catch (error) {
-                showAuthForm('passwordChange', error.message);
-            }
-        }
-
-        function openAccountPasswordDialog() {
+        function openAccountPasswordDialog(mustChange = false) {
             const form = document.getElementById('accountPasswordForm');
             form.reset();
             const message = document.getElementById('accountPasswordMessage');
             message.textContent = '';
             message.classList.add('hidden');
-            document.getElementById('accountPasswordDialog').showModal();
+            const dialog = document.getElementById('accountPasswordDialog');
+            dialog.dataset.mustChange = String(mustChange);
+            document.getElementById('accountPasswordTitle').textContent = mustChange
+                ? 'Change your temporary password'
+                : 'Change your password';
+            document.getElementById('accountPasswordDescription').textContent = mustChange
+                ? 'Choose a new password with at least 12 characters to continue.'
+                : 'Choose a new password with at least 12 characters.';
+            document.getElementById('accountCurrentPasswordLabel').textContent = mustChange
+                ? 'Temporary password'
+                : 'Current password';
+            document.getElementById('accountPasswordCancelButton').classList.toggle('hidden', mustChange);
+            document.getElementById('accountPasswordSubmitButton').textContent = mustChange
+                ? 'Change password and continue'
+                : 'Save password';
+            dialog.showModal();
         }
 
         function closeAccountPasswordDialog() {
-            document.getElementById('accountPasswordDialog').close();
+            const dialog = document.getElementById('accountPasswordDialog');
+            if (dialog.dataset.mustChange === 'true') return;
+            dialog.close();
+            document.getElementById('accountPasswordForm').reset();
         }
 
         async function changeAccountPassword(event) {
             event.preventDefault();
             const newPassword = document.getElementById('accountNewPassword').value;
             const message = document.getElementById('accountPasswordMessage');
+            const dialog = document.getElementById('accountPasswordDialog');
             if (newPassword !== document.getElementById('accountConfirmPassword').value) {
                 message.textContent = 'The new passwords do not match.';
                 message.classList.remove('hidden');
                 return;
             }
             try {
-                await apiRequest('change_password', {
+                const result = await apiRequest('change_password', {
                     method: 'POST',
                     body: {
                         currentPassword: document.getElementById('accountCurrentPassword').value,
                         newPassword
                     }
                 });
+                if (dialog.dataset.mustChange === 'true') {
+                    dialog.dataset.mustChange = 'false';
+                    dialog.close();
+                    initializeApplication(result);
+                    return;
+                }
                 closeAccountPasswordDialog();
                 notifyUser('Password changed successfully.');
             } catch (error) {
