@@ -262,8 +262,17 @@
                     </div>
 
                     <div class="sm:col-span-2 lg:col-span-4">
-                        <label for="entryManualDetails" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Manual Details / Items (Optional)</label>
-                        <textarea id="entryManualDetails" rows="3" maxlength="10000" placeholder="Describe items bought, sold, received, or spent; add quantities, item costs, and the purpose or income source." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+                        <label for="entryManualDetails" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Additional Details / Purpose (Optional)</label>
+                        <textarea id="entryManualDetails" rows="3" maxlength="10000" placeholder="Describe the purpose, income source, or other transaction context." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+                    </div>
+
+                    <div class="sm:col-span-2 lg:col-span-4">
+                        <div class="mb-2 flex items-center justify-between gap-2">
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Itemization (Optional)</label>
+                            <button type="button" onclick="addLedgerLineItem()" class="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700">Add item</button>
+                        </div>
+                        <div id="entryLineItemsList" class="space-y-2"></div>
+                        <p class="mt-1 text-[11px] text-slate-500">Manually itemize entries here, even when there is no receipt. Items are saved with the ledger entry.</p>
                     </div>
 
                     <div class="sm:col-span-2 lg:col-span-4 flex justify-end gap-3 pt-2">
@@ -379,9 +388,6 @@
                                     <i class="fa-solid fa-images"></i> Choose Photo
                                     <input id="ocrFileInput" type="file" accept="image/*" class="hidden" onchange="handleImageFile(event)">
                                 </label>
-                                <button type="button" onclick="startManualOcrEntry()" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold shadow-sm transition border border-slate-700">
-                                    <i class="fa-solid fa-list-check"></i> Add items without a receipt
-                                </button>
                             </div>
                         </div>
 
@@ -419,7 +425,7 @@
                     <div>
                         <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
                             <h3 class="font-bold text-slate-100 text-base flex items-center gap-2">
-                                <i class="fa-solid fa-wand-magic-sparkles text-blue-400"></i> Receipt & Manual Entry
+                                <i class="fa-solid fa-wand-magic-sparkles text-blue-400"></i> Extracted OCR Fields
                             </h3>
                             <span id="ocrStatusBadge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400">Awaiting Upload</span>
                         </div>
@@ -462,15 +468,15 @@
 
                             <div>
                                 <div class="mb-1 flex items-center justify-between gap-2">
-                                    <label class="text-xs font-semibold text-slate-400">Itemized details (optional)</label>
+                                    <label class="text-xs font-semibold text-slate-400">Purchased items (review and edit)</label>
                                     <button type="button" onclick="addOcrLineItem()" class="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700">Add item</button>
                                 </div>
                                 <div id="ocrLineItemsList" class="space-y-2"></div>
-                                <p class="mt-1 text-[11px] text-slate-500">Add items manually when there is no receipt, or review the suggestions against the photo. Items are saved with the ledger entry.</p>
+                                <p class="mt-1 text-[11px] text-slate-500">Gemini item suggestions can be wrong. Check quantities and prices against the photo; only verified items are saved.</p>
                             </div>
 
                             <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-200">
-                                Local scanning stays on this device. Selecting <strong>Analyze with Gemini (online)</strong> sends the selected receipt photo area to Google for interpretation. Manual item entries do not need a receipt photo. Review all details before posting.
+                                Local scanning stays on this device. Selecting <strong>Analyze with Gemini (online)</strong> sends the selected receipt photo area to Google for interpretation. Review all suggestions before posting.
                             </div>
                         </div>
                     </div>
@@ -770,7 +776,7 @@
     </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
-    <script src="tech_LFS.js?v=live-ledger-v1"></script>
-    <script src="receipt_scanner.js?v=ocr-income-v1"></script>
+    <script src="tech_LFS.js?v=ledger-itemization-v1"></script>
+    <script src="receipt_scanner.js?v=shared-itemization-v1"></script>
 </body>
 </html>

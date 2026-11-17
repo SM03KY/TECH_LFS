@@ -6,7 +6,6 @@
         let ocrCropStart = null;
         let ocrCropDraft = null;
         let ocrLineItems = [];
-        let ocrManualEntryMode = false;
 
         // PHOTO-TO-TEXT RECEIPT SCANNER
         function clearOcrFields() {
@@ -30,10 +29,19 @@
                 && Number.isFinite(amount) && amount > 0
                 && document.getElementById('ocrSubCat').value.trim().length <= 100
                 && document.getElementById('ocrSubCat').value.trim());
-            document.getElementById('ocrPostBtn').disabled = !(requiredFieldsReady && (activeOcrImage || ocrManualEntryMode));
+            document.getElementById('ocrPostBtn').disabled = !(requiredFieldsReady && activeOcrImage);
         }
 
         function addOcrLineItem(item = {}) {
+            addLineItemRow(item, 'ocrLineItemsList');
+            collectOcrLineItems();
+        }
+
+        function addLedgerLineItem(item = {}) {
+            addLineItemRow(item, 'entryLineItemsList');
+        }
+
+        function addLineItemRow(item, containerId) {
             const row = document.createElement('div');
             row.className = 'grid grid-cols-2 md:grid-cols-12 gap-2 items-end rounded-lg border border-slate-800 bg-slate-950/60 p-2';
             const addInput = (labelText, name, value, type, step, span) => {
@@ -61,15 +69,14 @@
             removeButton.textContent = 'Remove item';
             removeButton.addEventListener('click', () => {
                 row.remove();
-                collectOcrLineItems();
+                if (containerId === 'ocrLineItemsList') collectOcrLineItems();
             });
             row.appendChild(removeButton);
-            document.getElementById('ocrLineItemsList').appendChild(row);
-            collectOcrLineItems();
+            document.getElementById(containerId).appendChild(row);
         }
 
-        function collectOcrLineItems() {
-            ocrLineItems = [...document.querySelectorAll('#ocrLineItemsList > div')].map(row => {
+        function collectLineItems(containerId) {
+            return [...document.querySelectorAll(`#${containerId} > div`)].map(row => {
                 const read = name => row.querySelector(`[data-line-item-field="${name}"]`).value.trim();
                 const numberOrNull = value => value === '' ? null : Number(value);
                 return {
@@ -80,7 +87,21 @@
                     lineTotal: numberOrNull(read('lineTotal'))
                 };
             });
+        }
+
+        function collectOcrLineItems() {
+            ocrLineItems = collectLineItems('ocrLineItemsList');
             return ocrLineItems;
+        }
+
+        function collectLedgerLineItems() {
+            return collectLineItems('entryLineItemsList');
+        }
+
+        function setLedgerLineItems(items) {
+            const container = document.getElementById('entryLineItemsList');
+            container.innerHTML = '';
+            items.forEach(item => addLedgerLineItem(item));
         }
 
         function setOcrLineItems(items) {
@@ -111,7 +132,6 @@
 
         function clearOcrPhoto() {
             activeOcrImage = null;
-            ocrManualEntryMode = false;
             ocrCropStart = null;
             ocrCropDraft = null;
             pendingOcrAttachment = null;
@@ -130,15 +150,6 @@
             document.getElementById('ocrGeminiBtn').disabled = true;
             clearOcrFields();
             setOcrStatus('Awaiting Upload', 'slate');
-        }
-
-        function startManualOcrEntry() {
-            clearOcrPhoto();
-            ocrManualEntryMode = true;
-            const today = new Date();
-            document.getElementById('ocrDate').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-            setOcrStatus('Manual entry — no receipt needed', 'blue');
-            document.getElementById('ocrVendor').focus();
         }
 
         function handleImageFile(e) {
@@ -682,7 +693,7 @@
 
         async function postOcrToLedger() {
             const imageToPost = activeOcrImage;
-            if (!imageToPost && !ocrManualEntryMode) return;
+            if (!imageToPost) return;
 
             const vendor = document.getElementById('ocrVendor').value.trim();
             const date = document.getElementById('ocrDate').value;
@@ -712,16 +723,16 @@
 
             const postButton = document.getElementById('ocrPostBtn');
             postButton.disabled = true;
-            let attachment = {
-                rawOcrText: imageToPost ? ocrRawText : '',
-                correctedOcrText: imageToPost ? document.getElementById('ocrCorrectedText').value : '',
-                lineItems
-            };
+            let attachment;
             try {
-                if (imageToPost) {
-                    attachment.receiptImage = await prepareReceiptImage(imageToPost.imgSrc);
-                    if (activeOcrImage !== imageToPost) return;
-                }
+                const receiptImage = await prepareReceiptImage(imageToPost.imgSrc);
+                if (activeOcrImage !== imageToPost) return;
+                attachment = {
+                    rawOcrText: ocrRawText,
+                    correctedOcrText: document.getElementById('ocrCorrectedText').value,
+                    lineItems,
+                    receiptImage
+                };
             } catch (error) {
                 notifyUser(error.message);
                 updateOcrPostButton();
@@ -730,7 +741,6 @@
 
             cancelEditEntry();
             pendingOcrAttachment = attachment;
-            ocrManualEntryMode = false;
             postButton.disabled = true;
             setOcrStatus('Ledger draft ready — review and save the entry', 'emerald');
             switchTab('ledgerTab');

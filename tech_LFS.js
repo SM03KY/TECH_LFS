@@ -433,6 +433,18 @@
             e.preventDefault();
             const editId = document.getElementById('editEntryId').value;
             const existingTransaction = ledgerTransactions.find(transaction => transaction.id === editId);
+            const enteredItems = pendingOcrAttachment?.lineItems || collectLedgerLineItems();
+            const invalidItem = enteredItems.some(item => {
+                const hasValues = item.description || item.quantity !== null || item.unit || item.unitPrice !== null || item.lineTotal !== null;
+                return hasValues && (!item.description || item.description.length > 200 || item.unit.length > 32
+                    || (item.quantity !== null && (!Number.isFinite(item.quantity) || item.quantity <= 0))
+                    || (item.unitPrice !== null && (!Number.isFinite(item.unitPrice) || item.unitPrice < 0))
+                    || (item.lineTotal !== null && (!Number.isFinite(item.lineTotal) || item.lineTotal < 0)));
+            });
+            if (invalidItem) {
+                notifyUser('Complete each item description and check its quantity and prices before saving.');
+                return;
+            }
             const entry = {
                 id: editId || undefined,
                 date: document.getElementById('entryDate').value,
@@ -444,7 +456,7 @@
                 method: document.getElementById('entryMethod').value,
                 rawOcrText: pendingOcrAttachment?.rawOcrText || existingTransaction?.rawOcrText || '',
                 correctedOcrText: pendingOcrAttachment?.correctedOcrText || existingTransaction?.correctedOcrText || '',
-                lineItems: pendingOcrAttachment?.lineItems || existingTransaction?.lineItems || []
+                lineItems: enteredItems.filter(item => item.description)
             };
             if (pendingOcrAttachment?.receiptImage) entry.receiptImage = pendingOcrAttachment.receiptImage;
 
@@ -478,6 +490,7 @@
             document.getElementById('entryManualDetails').value = tx.manualDetails || '';
             document.getElementById('entryAmount').value = tx.amount;
             document.getElementById('entryMethod').value = tx.method;
+            setLedgerLineItems(tx.lineItems || []);
 
             document.getElementById('saveEntryBtn').innerHTML = `<i class="fa-solid fa-pen-to-square"></i> Update Entry`;
             document.getElementById('cancelEditBtn').classList.remove('hidden');
@@ -488,6 +501,7 @@
             pendingOcrAttachment = null;
             document.getElementById('editEntryId').value = '';
             document.getElementById('ledgerForm').reset();
+            setLedgerLineItems([]);
             document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
             document.getElementById('saveEntryBtn').innerHTML = `<i class="fa-solid fa-plus"></i> Add Journal Entry`;
             document.getElementById('cancelEditBtn').classList.add('hidden');
