@@ -13,6 +13,7 @@
             document.getElementById('ocrDate').value = '';
             document.getElementById('ocrAmount').value = '';
             document.getElementById('ocrSubCat').value = '';
+            document.getElementById('ocrCategory').value = 'Expense';
             ocrRawText = '';
             ocrTextImage = null;
             document.getElementById('ocrCorrectedText').value = '';
@@ -705,10 +706,13 @@
                 postButton.disabled = !activeOcrImage;
             }
 
+            const attachment = pendingOcrAttachment;
+            cancelEditEntry();
+            pendingOcrAttachment = attachment;
             switchTab('ledgerTab');
 
             document.getElementById('entryDate').value = date;
-            document.getElementById('entryCategory').value = 'Expense';
+            document.getElementById('entryCategory').value = document.getElementById('ocrCategory').value;
             document.getElementById('entrySubCategory').value = subCategory;
             document.getElementById('entryDescription').value = vendor;
             document.getElementById('entryAmount').value = amount;

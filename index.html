@@ -283,6 +283,7 @@
                     <div>
                         <h3 class="font-bold text-slate-100 text-base">General Journal Ledger</h3>
                         <p class="text-xs text-slate-400">Complete historical financial log</p>
+                        <p id="ledgerLiveStatus" role="status" aria-live="polite" class="text-[11px] text-slate-500">Live updates · syncing every 5 seconds</p>
                     </div>
 
                     <div class="flex flex-wrap items-center gap-3">
@@ -424,6 +425,15 @@
                             <div>
                                 <label class="text-xs font-semibold text-slate-400 block mb-1">Vendor / Payee</label>
                                 <input type="text" id="ocrVendor" placeholder="Extracted vendor name..." class="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:ring-2 focus:ring-blue-500">
+                            </div>
+
+                            <div>
+                                <label for="ocrCategory" class="text-xs font-semibold text-slate-400 block mb-1">Receipt type</label>
+                                <select id="ocrCategory" class="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:ring-2 focus:ring-blue-500">
+                                    <option value="Expense">Expense / purchase</option>
+                                    <option value="Revenue">Revenue / income / funds received</option>
+                                </select>
+                                <p class="mt-1 text-[11px] text-slate-500">Choose Revenue for money received; this selection is carried into the ledger entry.</p>
                             </div>
 
                             <div class="grid grid-cols-2 gap-3">
@@ -757,7 +767,7 @@
     </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
-    <script src="tech_LFS.js?v=password-reset-v2"></script>
-    <script src="receipt_scanner.js?v=ocr-split-v1"></script>
+    <script src="tech_LFS.js?v=live-ledger-v1"></script>
+    <script src="receipt_scanner.js?v=ocr-income-v1"></script>
 </body>
 </html>

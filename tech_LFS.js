@@ -12,6 +12,9 @@
         let incomeExpenseChartInstance = null;
         let categoryChartInstance = null;
         let pendingOcrAttachment = null;
+        let liveUpdateTimer = null;
+        let liveUpdateInFlight = false;
+        let liveUpdateErrorShown = false;
 
         const currencySymbols = { PHP: "₱" };
 
@@ -97,12 +100,60 @@
             applyOrgConfig();
             renderAll();
             renderDashboardCharts();
+            startLiveUpdates();
             switchTab('dashTab');
         }
 
         function continueAuthentication(data) {
             initializeApplication(data);
             if (data.needsPasswordChange) openAccountPasswordDialog(true);
+        }
+
+        function startLiveUpdates() {
+            if (liveUpdateTimer !== null) window.clearInterval(liveUpdateTimer);
+            liveUpdateTimer = window.setInterval(syncLiveData, 5000);
+        }
+
+        async function syncLiveData() {
+            if (!currentUser || document.visibilityState === 'hidden' || liveUpdateInFlight) return;
+            liveUpdateInFlight = true;
+            try {
+                const data = await apiRequest('bootstrap');
+                if (!data.authenticated) {
+                    window.clearInterval(liveUpdateTimer);
+                    liveUpdateTimer = null;
+                    currentUser = null;
+                    csrfToken = '';
+                    showAuthForm('login', 'Your session expired. Please sign in again.');
+                    return;
+                }
+
+                const settingsChanged = data.org.name !== orgState.name
+                    || data.org.fiscalYear !== orgState.fiscalYear
+                    || data.org.currency !== orgState.currency;
+                currentUser = data.user;
+                csrfToken = data.csrfToken;
+                orgState = data.org;
+                ledgerTransactions = data.transactions;
+                document.getElementById('sessionUser').textContent = `${currentUser.name} · ${currentUser.role}`;
+                applyRolePermissions();
+                if (settingsChanged) applyOrgConfig();
+                renderAll();
+                liveUpdateErrorShown = false;
+                const status = document.getElementById('ledgerLiveStatus');
+                status.textContent = `Live · updated ${new Date().toLocaleTimeString()}`;
+                status.className = 'text-[11px] text-emerald-400';
+            } catch (error) {
+                const status = document.getElementById('ledgerLiveStatus');
+                status.textContent = 'Live sync unavailable · retrying';
+                status.className = 'text-[11px] text-amber-400';
+                if (!liveUpdateErrorShown) {
+                    notifyUser(`Live updates are temporarily unavailable: ${error.message}`);
+                    liveUpdateErrorShown = true;
+                }
+            } finally {
+                liveUpdateInFlight = false;
+            }
         }
 
         async function login(event) {
@@ -206,6 +257,8 @@
         async function logout() {
             try {
                 await apiRequest('logout', { method: 'POST', body: {} });
+                if (liveUpdateTimer !== null) window.clearInterval(liveUpdateTimer);
+                liveUpdateTimer = null;
                 currentUser = null;
                 csrfToken = '';
                 ledgerTransactions = [];

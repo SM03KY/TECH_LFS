@@ -28,7 +28,9 @@ The receipt scanner uses a locally bundled Tesseract.js engine and English langu
 
 The OCR engine, WebAssembly builds, and English trained data are bundled under `vendor/` with their license notices. Receipt scanning itself makes no network requests; the rest of the page still loads Tailwind CSS, Font Awesome, and Chart.js from CDNs.
 
-The scanner accepts a camera photo or image upload, and lets you retake or clear the selected photo. If the receipt is small in the frame, use **Select receipt area** and drag around the printed text before analysis; local OCR word highlights are mapped back to the original photo. Itemized descriptions, quantities, units, prices, corrected text, and original local OCR text are saved with the ledger transaction. Cropping cannot restore out-of-focus text, so retake blurry photos. For the best scan, keep the receipt flat, hold the camera steady, tap to focus, and avoid glare. Review all values before posting.
+The scanner accepts a camera photo or image upload, and lets you retake or clear the selected photo. If the receipt is small in the frame, use **Select receipt area** and drag around the printed text before analysis; local OCR word highlights are mapped back to the original photo. Itemized descriptions, quantities, units, prices, corrected text, and original local OCR text are saved with the ledger transaction. Choose **Revenue / income / funds received** for money coming in or **Expense / purchase** for money spent; the OCR fields are transferred to a ledger draft for review before you save the entry. Cropping cannot restore out-of-focus text, so retake blurry photos. For the best scan, keep the receipt flat, hold the camera steady, tap to focus, and avoid glare. Review all values before posting.
+
+Signed-in pages refresh ledger data automatically every five seconds so changes made by another user appear without reloading. Updates pause while the page is in the background.
 
 Use the site through Apache (`http://localhost/Tech/`), not by opening `index.html` from the filesystem. PHP must be enabled, `pdo_mysql` must be available, and PHP cURL must be enabled for Gemini analysis.
 
