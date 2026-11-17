@@ -6,6 +6,7 @@
         let ocrCropStart = null;
         let ocrCropDraft = null;
         let ocrLineItems = [];
+        let ocrManualEntryMode = false;
 
         // PHOTO-TO-TEXT RECEIPT SCANNER
         function clearOcrFields() {
@@ -20,6 +21,16 @@
             document.getElementById('ocrLineItemsList').innerHTML = '';
             ocrLineItems = [];
             document.getElementById('ocrPostBtn').disabled = true;
+        }
+
+        function updateOcrPostButton() {
+            const amount = Number(document.getElementById('ocrAmount').value);
+            const requiredFieldsReady = Boolean(document.getElementById('ocrVendor').value.trim()
+                && document.getElementById('ocrDate').value
+                && Number.isFinite(amount) && amount > 0
+                && document.getElementById('ocrSubCat').value.trim().length <= 100
+                && document.getElementById('ocrSubCat').value.trim());
+            document.getElementById('ocrPostBtn').disabled = !(requiredFieldsReady && (activeOcrImage || ocrManualEntryMode));
         }
 
         function addOcrLineItem(item = {}) {
@@ -100,6 +111,7 @@
 
         function clearOcrPhoto() {
             activeOcrImage = null;
+            ocrManualEntryMode = false;
             ocrCropStart = null;
             ocrCropDraft = null;
             pendingOcrAttachment = null;
@@ -118,6 +130,15 @@
             document.getElementById('ocrGeminiBtn').disabled = true;
             clearOcrFields();
             setOcrStatus('Awaiting Upload', 'slate');
+        }
+
+        function startManualOcrEntry() {
+            clearOcrPhoto();
+            ocrManualEntryMode = true;
+            const today = new Date();
+            document.getElementById('ocrDate').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            setOcrStatus('Manual entry — no receipt needed', 'blue');
+            document.getElementById('ocrVendor').focus();
         }
 
         function handleImageFile(e) {
@@ -550,7 +571,7 @@
                 ocrRawText = result.rawText;
                 document.getElementById('ocrCorrectedText').value = result.rawText;
                 ocrTextImage = imageToScan;
-                document.getElementById('ocrPostBtn').disabled = !ocrRawText;
+                updateOcrPostButton();
                 return Boolean(ocrRawText);
             } finally {
                 ocrProgressHandler = null;
@@ -635,8 +656,9 @@
                 setOcrLineItems(Array.isArray(analysis.lineItems) ? analysis.lineItems : []);
                 const hasRequiredFields = document.getElementById('ocrVendor').value.trim()
                     && document.getElementById('ocrDate').value
-                    && Number(document.getElementById('ocrAmount').value) > 0;
-                document.getElementById('ocrPostBtn').disabled = !hasRequiredFields;
+                    && Number(document.getElementById('ocrAmount').value) > 0
+                    && document.getElementById('ocrSubCat').value.trim();
+                updateOcrPostButton();
                 setOcrStatus(
                     hasRequiredFields ? 'Gemini suggestions ready — review before posting' : 'Gemini analysis ready — complete missing fields',
                     'amber'
@@ -645,7 +667,7 @@
                 if (activeOcrImage !== imageToScan) return;
                 const hasLocalText = ocrRawText.trim();
                 if (hasLocalText) {
-                    document.getElementById('ocrPostBtn').disabled = false;
+                    updateOcrPostButton();
                     setOcrStatus('Gemini unavailable — local OCR is ready', 'amber');
                 } else {
                     setOcrStatus('Gemini unavailable — try local OCR', 'rose');
@@ -660,7 +682,7 @@
 
         async function postOcrToLedger() {
             const imageToPost = activeOcrImage;
-            if(!imageToPost) return;
+            if (!imageToPost && !ocrManualEntryMode) return;
 
             const vendor = document.getElementById('ocrVendor').value.trim();
             const date = document.getElementById('ocrDate').value;
@@ -690,25 +712,27 @@
 
             const postButton = document.getElementById('ocrPostBtn');
             postButton.disabled = true;
+            let attachment = {
+                rawOcrText: imageToPost ? ocrRawText : '',
+                correctedOcrText: imageToPost ? document.getElementById('ocrCorrectedText').value : '',
+                lineItems
+            };
             try {
-                const receiptImage = await prepareReceiptImage(imageToPost.imgSrc);
-                if (activeOcrImage !== imageToPost) return;
-                pendingOcrAttachment = {
-                    rawOcrText: ocrRawText,
-                    correctedOcrText: document.getElementById('ocrCorrectedText').value,
-                    lineItems,
-                    receiptImage
-                };
+                if (imageToPost) {
+                    attachment.receiptImage = await prepareReceiptImage(imageToPost.imgSrc);
+                    if (activeOcrImage !== imageToPost) return;
+                }
             } catch (error) {
                 notifyUser(error.message);
+                updateOcrPostButton();
                 return;
-            } finally {
-                postButton.disabled = !activeOcrImage;
             }
 
-            const attachment = pendingOcrAttachment;
             cancelEditEntry();
             pendingOcrAttachment = attachment;
+            ocrManualEntryMode = false;
+            postButton.disabled = true;
+            setOcrStatus('Ledger draft ready — review and save the entry', 'emerald');
             switchTab('ledgerTab');
 
             document.getElementById('entryDate').value = date;
